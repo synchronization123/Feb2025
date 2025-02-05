@@ -7,7 +7,11 @@
 
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Select2 CSS for searchable dropdown -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/css/select2.min.css" rel="stylesheet" />
+    
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/js/select2.min.js"></script>
 
     <style>
         body {
@@ -31,7 +35,7 @@
             text-align: center;
             position: relative;
         }
-        input.filter-box {
+        input.filter-box, select.filter-box {
             width: 100%;
             padding: 5px;
             border: 1px solid #ddd;
@@ -45,21 +49,58 @@
 <div class="container mt-4">
     <h2 class="text-center mb-3">Engagements Table</h2>
 
+    <!-- Filters -->
+    <div class="row g-2 mb-3">
+        <div class="col-md-3">
+            <select id="filterTags" class="form-select filter-box" onchange="applyFilters()">
+                <option value="">Select Tag</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select id="filterStatus" class="form-select filter-box" onchange="applyFilters()">
+                <option value="">Select Status</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select id="filterLead" class="form-select filter-box" onchange="applyFilters()">
+                <option value="">Select Lead</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select id="filterProduct" class="form-select filter-box" onchange="applyFilters()">
+                <option value="">Select Product</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="row g-2 mb-3">
+        <div class="col-md-3">
+            <input type="date" id="filterCreated" class="filter-box" onchange="applyFilters()">
+        </div>
+        <div class="col-md-3">
+            <input type="date" id="filterUpdated" class="filter-box" onchange="applyFilters()">
+        </div>
+    </div>
+
+    <div class="text-center mb-3">
+        <button class="btn btn-secondary" onclick="clearFilters()">Clear All Filters</button>
+    </div>
+
     <!-- Table -->
     <div class="table-responsive">
         <table class="table table-bordered table-striped">
             <thead>
                 <tr>
                     <th>ID <input type="text" id="filterID" class="filter-box" onkeyup="applyFilters()" placeholder="Search ID"></th>
-                    <th>Tags <input type="text" id="filterTags" class="filter-box" onkeyup="applyFilters()" placeholder="Search Tags"></th>
+                    <th>Tags <input type="text" id="filterTagsSearch" class="filter-box" onkeyup="applyFilters()" placeholder="Search Tags"></th>
                     <th>Name <input type="text" id="filterName" class="filter-box" onkeyup="applyFilters()" placeholder="Search Name"></th>
                     <th>Description <input type="text" id="filterDescription" class="filter-box" onkeyup="applyFilters()" placeholder="Search Description"></th>
                     <th>Version <input type="text" id="filterVersion" class="filter-box" onkeyup="applyFilters()" placeholder="Search Version"></th>
-                    <th>Created <input type="date" id="filterCreated" class="filter-box" onchange="applyFilters()"></th>
-                    <th>Status <input type="text" id="filterStatus" class="filter-box" onkeyup="applyFilters()" placeholder="Search Status"></th>
-                    <th>Lead <input type="text" id="filterLead" class="filter-box" onkeyup="applyFilters()" placeholder="Search Lead"></th>
-                    <th>Product <input type="text" id="filterProduct" class="filter-box" onkeyup="applyFilters()" placeholder="Search Product"></th>
-                    <th>Updated <input type="date" id="filterUpdated" class="filter-box" onchange="applyFilters()"></th>
+                    <th>Created <input type="date" id="filterCreatedDate" class="filter-box" onchange="applyFilters()"></th>
+                    <th>Status <input type="text" id="filterStatusSearch" class="filter-box" onkeyup="applyFilters()" placeholder="Search Status"></th>
+                    <th>Lead <input type="text" id="filterLeadSearch" class="filter-box" onkeyup="applyFilters()" placeholder="Search Lead"></th>
+                    <th>Product <input type="text" id="filterProductSearch" class="filter-box" onkeyup="applyFilters()" placeholder="Search Product"></th>
+                    <th>Updated <input type="date" id="filterUpdatedDate" class="filter-box" onchange="applyFilters()"></th>
                     <th>Notes <input type="text" id="filterNotes" class="filter-box" onkeyup="applyFilters()" placeholder="Search Notes"></th>
                 </tr>
             </thead>
@@ -84,9 +125,9 @@
     const itemsPerPage = 50;
     let totalPages = 1;
 
-    // Fetch all data from API at the start
+    // Fetch all data at the start
     function fetchAllData() {
-        let url = `${baseUrl}&limit=1000`;  // You can increase this number if needed to fetch more data
+        let url = `${baseUrl}&limit=1000`; // Fetch larger data
         fetch(url)
             .then(response => response.json())
             .then(data => {
@@ -100,10 +141,10 @@
             .catch(error => console.error("Error fetching data:", error));
     }
 
-    // Render table with data
+    // Render table based on the data and pagination
     function renderTable() {
         const tbody = document.getElementById("tableBody");
-        tbody.innerHTML = ""; // Clear existing rows
+        tbody.innerHTML = ""; // Clear previous rows
         const start = (currentPage - 1) * itemsPerPage;
         const end = start + itemsPerPage;
         const currentPageData = allData.slice(start, end);
@@ -130,7 +171,7 @@
         return date ? new Date(date).toISOString().split('T')[0] : "";
     }
 
-    // Pagination functions
+    // Pagination controls
     function firstPage() {
         currentPage = 1;
         renderTable();
@@ -159,7 +200,7 @@
         document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
     }
 
-    // Apply filters to the data
+    // Apply filters to the table
     function applyFilters() {
         let filteredData = allData.filter(item => {
             return (!document.getElementById("filterID").value || item.id.toString().includes(document.getElementById("filterID").value)) &&
@@ -174,18 +215,27 @@
                    (!document.getElementById("filterUpdated").value || formatDate(item.updated) === document.getElementById("filterUpdated").value);
         });
         allData = filteredData;
-        totalPages = Math.ceil(allData.length / itemsPerPage);  // Update total pages after filter
-        currentPage = 1;  // Reset to the first page after filtering
+        totalPages = Math.ceil(allData.length / itemsPerPage);
+        currentPage = 1; // Reset to the first page
         renderTable();
     }
 
-    // Clear filters and reload all data
+    // Clear filters and reload the full dataset
     function clearFilters() {
         document.querySelectorAll("select, input").forEach(input => input.value = "");
-        fetchData();
+        fetchAllData();
     }
 
-    fetchAllData();  // Initial fetch on page load
+    // Initialize everything
+    $(document).ready(function() {
+        // Initialize searchable dropdowns using Select2
+        $('#filterTags').select2();
+        $('#filterStatus').select2();
+        $('#filterLead').select2();
+        $('#filterProduct').select2();
+        
+        fetchAllData(); // Initial data fetch
+    });
 </script>
 
 </body>
