@@ -79,8 +79,11 @@
 
 <script>
     const baseUrl = "https://demo.defectdojo.org/api/v2/engagements/?o=-ordering";
-    let currentPage = 1, totalPages = 1, allData = [];
+    let currentPage = 1;  // Start on the first page
+    let totalPages = 1;   // Initially set to 1, will be updated once data is fetched
+    let allData = [];
 
+    // Function to fetch data from the API
     function fetchData() {
         let url = `${baseUrl}&limit=50&page=${currentPage}`;
         fetch(url)
@@ -89,16 +92,17 @@
                 if (data.results) {
                     allData = data.results;
                     renderTable();
-                    totalPages = Math.ceil(data.count / 50);
+                    totalPages = Math.ceil(data.count / 50);  // Update total pages based on the response count
                     document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
                 }
             })
             .catch(error => console.error("Error fetching data:", error));
     }
 
+    // Function to render the data into the table
     function renderTable() {
         const tbody = document.getElementById("tableBody");
-        tbody.innerHTML = ""; // Clear previous data
+        tbody.innerHTML = "";  // Clear any previous rows
         allData.forEach(item => {
             tbody.innerHTML += `<tr>
                 <td>${item.id}</td>
@@ -116,10 +120,12 @@
         });
     }
 
+    // Function to format date in YYYY-MM-DD format
     function formatDate(date) {
         return date ? new Date(date).toISOString().split('T')[0] : "";
     }
 
+    // Pagination functions
     function firstPage() {
         currentPage = 1;
         fetchData();
@@ -144,6 +150,7 @@
         fetchData();
     }
 
+    // Apply filters to the table based on user input
     function applyFilters() {
         let filteredData = allData.filter(item => {
             return (!document.getElementById("filterID").value || item.id.toString().includes(document.getElementById("filterID").value)) &&
@@ -161,12 +168,13 @@
         renderTable();
     }
 
+    // Clear all filters and refresh the data
     function clearFilters() {
         document.querySelectorAll("select, input").forEach(input => input.value = "");
         fetchData();
     }
 
-    fetchData();
+    fetchData(); // Initial data fetch
 </script>
 
 </body>
