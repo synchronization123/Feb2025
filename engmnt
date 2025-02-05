@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Engagements Table</title>
-    
+
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
+
     <!-- Font Awesome -->
     <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
 
@@ -17,7 +17,7 @@
             background-color: #f8f9fa;
         }
         .container {
-            max-width: 95%;
+            max-width: 100%;
             margin: auto;
             background: white;
             padding: 20px;
@@ -50,26 +50,22 @@
     <!-- Filters -->
     <div class="row g-2 mb-3">
         <div class="col-md-3">
-            <input type="text" id="searchTags" class="form-control" placeholder="Search Tags">
-            <select id="filterTags" class="form-select mt-1">
+            <select id="filterTags" class="form-select" onchange="applyFilters()">
                 <option value="">Select Tag</option>
             </select>
         </div>
         <div class="col-md-3">
-            <input type="text" id="searchStatus" class="form-control" placeholder="Search Status">
-            <select id="filterStatus" class="form-select mt-1">
+            <select id="filterStatus" class="form-select" onchange="applyFilters()">
                 <option value="">Select Status</option>
             </select>
         </div>
         <div class="col-md-3">
-            <input type="text" id="searchLead" class="form-control" placeholder="Search Lead">
-            <select id="filterLead" class="form-select mt-1">
+            <select id="filterLead" class="form-select" onchange="applyFilters()">
                 <option value="">Select Lead</option>
             </select>
         </div>
         <div class="col-md-3">
-            <input type="text" id="searchProduct" class="form-control" placeholder="Search Product">
-            <select id="filterProduct" class="form-select mt-1">
+            <select id="filterProduct" class="form-select" onchange="applyFilters()">
                 <option value="">Select Product</option>
             </select>
         </div>
@@ -77,21 +73,20 @@
 
     <div class="row g-2 mb-3">
         <div class="col-md-3">
-            <input type="date" id="filterCreatedFrom" class="form-control">
+            <input type="date" id="filterCreatedFrom" class="form-control" onchange="applyFilters()">
         </div>
         <div class="col-md-3">
-            <input type="date" id="filterCreatedTo" class="form-control">
+            <input type="date" id="filterCreatedTo" class="form-control" onchange="applyFilters()">
         </div>
         <div class="col-md-3">
-            <input type="date" id="filterUpdatedFrom" class="form-control">
+            <input type="date" id="filterUpdatedFrom" class="form-control" onchange="applyFilters()">
         </div>
         <div class="col-md-3">
-            <input type="date" id="filterUpdatedTo" class="form-control">
+            <input type="date" id="filterUpdatedTo" class="form-control" onchange="applyFilters()">
         </div>
     </div>
 
     <div class="text-center mb-3">
-        <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
         <button class="btn btn-secondary" onclick="clearFilters()">Clear All</button>
     </div>
 
@@ -141,6 +136,7 @@
                     updateFilters(data.results);
                     renderTable(data.results);
                     totalPages = Math.ceil(data.count / 50);
+                    document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
                 }
             })
             .catch(error => console.error("Error fetching data:", error));
@@ -197,6 +193,14 @@
     }
 
     function formatDate(date) { return date ? new Date(date).toISOString().split('T')[0] : ""; }
+
+    function firstPage() { currentPage = 1; fetchData(); }
+    function prevPage() { if (currentPage > 1) currentPage--; fetchData(); }
+    function nextPage() { if (currentPage < totalPages) currentPage++; fetchData(); }
+    function lastPage() { currentPage = totalPages; fetchData(); }
+
+    function applyFilters() { fetchData(); }
+    function clearFilters() { document.querySelectorAll("select, input").forEach(input => input.value = ""); fetchData(); }
 
     fetchData();
 </script>
