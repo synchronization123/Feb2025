@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Engagements Table</title>
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -11,7 +12,7 @@
             background-color: #f8f9fa;
         }
         .container {
-            max-width: 1200px;
+            max-width: 100%;
             margin: auto;
             background: white;
             padding: 20px;
@@ -55,6 +56,26 @@
         .pagination {
             margin-top: 10px;
             text-align: center;
+        }
+        .btn {
+            border: none;
+            cursor: pointer;
+            padding: 5px 10px;
+            font-size: 14px;
+            border-radius: 4px;
+            margin-right: 5px;
+        }
+        .btn-edit {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-close {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-notes {
+            background-color: #ffc107;
+            color: black;
         }
     </style>
 </head>
@@ -113,23 +134,23 @@
 <script>
     const baseUrl = "https://demo.defectdojo.org/api/v2/engagements";
     let currentPage = 1, totalPages = 1;
-    let engagements = [];
     let allTags = new Set();
 
     function fetchData() {
         fetch(`${baseUrl}?limit=50&page=${currentPage}`)
             .then(response => response.json())
             .then(data => {
-                engagements = data.results || [];
-                totalPages = Math.ceil(data.count / 50);
-                updateTagDropdown();
-                renderTable();
+                if (data.results) {
+                    renderTable(data.results);
+                    totalPages = Math.ceil(data.count / 50);
+                    updateTagDropdown(data.results);
+                }
             })
             .catch(error => console.error("Error fetching data:", error));
     }
 
-    function updateTagDropdown() {
-        engagements.forEach(item => {
+    function updateTagDropdown(results) {
+        results.forEach(item => {
             if (item.tags) {
                 item.tags.forEach(tag => allTags.add(tag));
             }
@@ -145,7 +166,7 @@
         });
     }
 
-    function renderTable() {
+    function renderTable(engagements) {
         const tbody = document.getElementById("tableBody");
         tbody.innerHTML = "";
         engagements.forEach(item => {
@@ -162,9 +183,9 @@
                 <td>${formatDate(item.updated)}</td>
                 <td>${item.notes || "N/A"}</td>
                 <td>
-                    <button onclick="editEngagement(${item.id})">Edit</button>
-                    <button onclick="closeEngagement(${item.id})">Close</button>
-                    <button onclick="addNotes(${item.id})">Add Notes</button>
+                    <button class="btn btn-edit" onclick="editEngagement(${item.id})"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-close" onclick="closeEngagement(${item.id})"><i class="fas fa-times"></i></button>
+                    <button class="btn btn-notes" onclick="addNotes(${item.id})"><i class="fas fa-sticky-note"></i></button>
                 </td>
             </tr>`;
             tbody.innerHTML += row;
@@ -181,16 +202,8 @@
     function nextPage() { if (currentPage < totalPages) currentPage++; fetchData(); }
     function lastPage() { currentPage = totalPages; fetchData(); }
 
-    function applyFilters() {
-        let tag = document.getElementById("filterTags").value.toLowerCase();
-        engagements = engagements.filter(item => !tag || (item.tags && item.tags.includes(tag)));
-        renderTable();
-    }
-
-    function clearFilters() {
-        document.querySelectorAll(".filter-container input, .filter-container select").forEach(input => input.value = "");
-        fetchData();
-    }
+    function applyFilters() { fetchData(); }
+    function clearFilters() { document.querySelectorAll(".filter-container input, .filter-container select").forEach(input => input.value = ""); fetchData(); }
 
     function editEngagement(id) { alert(`Edit engagement ID: ${id}`); }
     function closeEngagement(id) { alert(`Close engagement ID: ${id}`); }
