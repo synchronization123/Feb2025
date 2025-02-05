@@ -23,10 +23,12 @@
             background-color: #f4f4f4;
         }
         .filter-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
             margin-bottom: 10px;
         }
-        input, button {
-            margin-right: 5px;
+        input, select, button {
             padding: 5px;
         }
         .pagination {
@@ -39,7 +41,9 @@
     <h2>Engagements Table</h2>
 
     <div class="filter-container">
-        <input type="text" id="filterTags" placeholder="Filter by Tags">
+        <select id="filterTags">
+            <option value="">Select Tag</option>
+        </select>
         <input type="text" id="filterName" placeholder="Filter by Name">
         <input type="text" id="filterDescription" placeholder="Filter by Description">
         <input type="text" id="filterVersion" placeholder="Filter by Version">
@@ -88,11 +92,12 @@
         let currentPage = 1, totalPages = 1, engagements = [];
 
         function fetchData() {
-            fetch(`${baseUrl}?limit=10&page=${currentPage}`)
+            const url = `${baseUrl}?limit=50&page=${currentPage}`;
+            fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     engagements = data.results || [];
-                    totalPages = Math.ceil(data.count / 10);
+                    totalPages = Math.ceil(data.count / 50);
                     renderTable();
                 })
                 .catch(error => console.error("Error fetching data:", error));
@@ -108,11 +113,11 @@
                     <td>${item.name || ""}</td>
                     <td>${item.description || ""}</td>
                     <td>${item.version || ""}</td>
-                    <td>${item.created || ""}</td>
+                    <td>${formatDate(item.created)}</td>
                     <td>${item.status || ""}</td>
                     <td>${item.lead || ""}</td>
                     <td>${item.product || ""}</td>
-                    <td>${item.updated || ""}</td>
+                    <td>${formatDate(item.updated)}</td>
                     <td>${item.notes || "N/A"}</td>
                     <td>
                         <button onclick="editEngagement(${item.id})">Edit</button>
@@ -125,8 +130,13 @@
             document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
         }
 
+        function formatDate(dateString) {
+            if (!dateString) return "";
+            return new Date(dateString).toISOString().split('T')[0]; // YYYY-MM-DD
+        }
+
         function applyFilters() {
-            let tags = document.getElementById("filterTags").value.toLowerCase();
+            let tag = document.getElementById("filterTags").value.toLowerCase();
             let name = document.getElementById("filterName").value.toLowerCase();
             let description = document.getElementById("filterDescription").value.toLowerCase();
             let version = document.getElementById("filterVersion").value.toLowerCase();
@@ -138,16 +148,16 @@
             let updatedTo = document.getElementById("filterUpdatedTo").value;
 
             let filteredData = engagements.filter(item => {
-                return (!tags || (item.tags && item.tags.join(", ").toLowerCase().includes(tags))) &&
+                return (!tag || (item.tags && item.tags.join(", ").toLowerCase().includes(tag))) &&
                        (!name || (item.name && item.name.toLowerCase().includes(name))) &&
                        (!description || (item.description && item.description.toLowerCase().includes(description))) &&
                        (!version || (item.version && item.version.toLowerCase().includes(version))) &&
-                       (!lead || (item.lead && item.lead.toString().toLowerCase().includes(lead))) &&
-                       (!product || (item.product && item.product.toString().toLowerCase().includes(product))) &&
-                       (!createdFrom || (item.created && new Date(item.created) >= new Date(createdFrom))) &&
-                       (!createdTo || (item.created && new Date(item.created) <= new Date(createdTo))) &&
-                       (!updatedFrom || (item.updated && new Date(item.updated) >= new Date(updatedFrom))) &&
-                       (!updatedTo || (item.updated && new Date(item.updated) <= new Date(updatedTo)));
+                       (!lead || (item.lead && item.lead.toLowerCase().includes(lead))) &&
+                       (!product || (item.product && item.product.toLowerCase().includes(product))) &&
+                       (!createdFrom || (item.created && formatDate(item.created) >= createdFrom)) &&
+                       (!createdTo || (item.created && formatDate(item.created) <= createdTo)) &&
+                       (!updatedFrom || (item.updated && formatDate(item.updated) >= updatedFrom)) &&
+                       (!updatedTo || (item.updated && formatDate(item.updated) <= updatedTo));
             });
 
             engagements = filteredData;
@@ -155,52 +165,21 @@
         }
 
         function clearFilters() {
-            document.querySelectorAll(".filter-container input").forEach(input => input.value = "");
+            document.querySelectorAll(".filter-container input, .filter-container select").forEach(input => input.value = "");
             fetchData();
         }
 
-        function firstPage() {
-            if (currentPage > 1) {
-                currentPage = 1;
-                fetchData();
-            }
-        }
+        function firstPage() { currentPage = 1; fetchData(); }
+        function prevPage() { if (currentPage > 1) currentPage--; fetchData(); }
+        function nextPage() { if (currentPage < totalPages) currentPage++; fetchData(); }
+        function lastPage() { currentPage = totalPages; fetchData(); }
 
-        function prevPage() {
-            if (currentPage > 1) {
-                currentPage--;
-                fetchData();
-            }
-        }
+        function editEngagement(id) { alert(`Edit engagement ID: ${id}`); }
+        function closeEngagement(id) { alert(`Close engagement ID: ${id}`); }
+        function addNotes(id) { alert(`Add notes to engagement ID: ${id}`); }
 
-        function nextPage() {
-            if (currentPage < totalPages) {
-                currentPage++;
-                fetchData();
-            }
-        }
-
-        function lastPage() {
-            if (currentPage < totalPages) {
-                currentPage = totalPages;
-                fetchData();
-            }
-        }
-
-        function editEngagement(id) {
-            alert(`Edit engagement ID: ${id}`);
-        }
-
-        function closeEngagement(id) {
-            alert(`Close engagement ID: ${id}`);
-        }
-
-        function addNotes(id) {
-            alert(`Add notes to engagement ID: ${id}`);
-        }
-
-        setInterval(fetchData, 11 * 60 * 1000); // Auto-refresh every 11 minutes
-        fetchData(); // Initial load
+        setInterval(fetchData, 11 * 60 * 1000);
+        fetchData(); 
     </script>
 
 </body>
