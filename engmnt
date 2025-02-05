@@ -104,15 +104,15 @@
             engagements.forEach(item => {
                 let row = `<tr>
                     <td>${item.id}</td>
-                    <td>${item.tags.join(", ")}</td>
-                    <td>${item.name}</td>
-                    <td>${item.description}</td>
-                    <td>${item.version}</td>
-                    <td>${item.created}</td>
-                    <td>${item.status}</td>
-                    <td>${item.lead}</td>
-                    <td>${item.product}</td>
-                    <td>${item.updated}</td>
+                    <td>${item.tags ? item.tags.join(", ") : ""}</td>
+                    <td>${item.name || ""}</td>
+                    <td>${item.description || ""}</td>
+                    <td>${item.version || ""}</td>
+                    <td>${item.created || ""}</td>
+                    <td>${item.status || ""}</td>
+                    <td>${item.lead || ""}</td>
+                    <td>${item.product || ""}</td>
+                    <td>${item.updated || ""}</td>
                     <td>${item.notes || "N/A"}</td>
                     <td>
                         <button onclick="editEngagement(${item.id})">Edit</button>
@@ -138,16 +138,16 @@
             let updatedTo = document.getElementById("filterUpdatedTo").value;
 
             let filteredData = engagements.filter(item => {
-                return (!tags || item.tags.join(", ").toLowerCase().includes(tags)) &&
-                       (!name || item.name.toLowerCase().includes(name)) &&
-                       (!description || item.description.toLowerCase().includes(description)) &&
-                       (!version || item.version.toLowerCase().includes(version)) &&
-                       (!lead || item.lead.toLowerCase().includes(lead)) &&
-                       (!product || item.product.toLowerCase().includes(product)) &&
-                       (!createdFrom || new Date(item.created) >= new Date(createdFrom)) &&
-                       (!createdTo || new Date(item.created) <= new Date(createdTo)) &&
-                       (!updatedFrom || new Date(item.updated) >= new Date(updatedFrom)) &&
-                       (!updatedTo || new Date(item.updated) <= new Date(updatedTo));
+                return (!tags || (item.tags && item.tags.join(", ").toLowerCase().includes(tags))) &&
+                       (!name || (item.name && item.name.toLowerCase().includes(name))) &&
+                       (!description || (item.description && item.description.toLowerCase().includes(description))) &&
+                       (!version || (item.version && item.version.toLowerCase().includes(version))) &&
+                       (!lead || (item.lead && item.lead.toString().toLowerCase().includes(lead))) &&
+                       (!product || (item.product && item.product.toString().toLowerCase().includes(product))) &&
+                       (!createdFrom || (item.created && new Date(item.created) >= new Date(createdFrom))) &&
+                       (!createdTo || (item.created && new Date(item.created) <= new Date(createdTo))) &&
+                       (!updatedFrom || (item.updated && new Date(item.updated) >= new Date(updatedFrom))) &&
+                       (!updatedTo || (item.updated && new Date(item.updated) <= new Date(updatedTo)));
             });
 
             engagements = filteredData;
