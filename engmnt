@@ -30,10 +30,6 @@
             color: white;
             text-align: center;
         }
-        .dropdown-menu {
-            max-height: 200px;
-            overflow-y: auto;
-        }
     </style>
 </head>
 <body>
@@ -117,12 +113,12 @@
 </div>
 
 <script>
-    const baseUrl = "https://demo.defectdojo.org/api/v2/engagements";
+    const baseUrl = "https://demo.defectdojo.org/api/v2/engagements/?o=-ordering";
     let currentPage = 1, totalPages = 1;
     let allTags = new Set(), allStatuses = new Set(), allLeads = new Set(), allProducts = new Set();
 
     function fetchData() {
-        let url = `${baseUrl}?limit=50&page=${currentPage}`;
+        let url = `${baseUrl}&limit=50&page=${currentPage}`;
         fetch(url)
             .then(response => response.json())
             .then(data => {
