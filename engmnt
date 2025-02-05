@@ -79,31 +79,36 @@
 
 <script>
     const baseUrl = "https://demo.defectdojo.org/api/v2/engagements/?o=-ordering";
-    let currentPage = 1;  // Start on the first page
-    let totalPages = 1;   // Initially set to 1, will be updated once data is fetched
     let allData = [];
+    let currentPage = 1;
+    const itemsPerPage = 50;
+    let totalPages = 1;
 
-    // Function to fetch data from the API
-    function fetchData() {
-        let url = `${baseUrl}&limit=50&page=${currentPage}`;
+    // Fetch all data from API at the start
+    function fetchAllData() {
+        let url = `${baseUrl}&limit=1000`;  // You can increase this number if needed to fetch more data
         fetch(url)
             .then(response => response.json())
             .then(data => {
                 if (data.results) {
                     allData = data.results;
+                    totalPages = Math.ceil(allData.length / itemsPerPage);
                     renderTable();
-                    totalPages = Math.ceil(data.count / 50);  // Update total pages based on the response count
                     document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
                 }
             })
             .catch(error => console.error("Error fetching data:", error));
     }
 
-    // Function to render the data into the table
+    // Render table with data
     function renderTable() {
         const tbody = document.getElementById("tableBody");
-        tbody.innerHTML = "";  // Clear any previous rows
-        allData.forEach(item => {
+        tbody.innerHTML = ""; // Clear existing rows
+        const start = (currentPage - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const currentPageData = allData.slice(start, end);
+
+        currentPageData.forEach(item => {
             tbody.innerHTML += `<tr>
                 <td>${item.id}</td>
                 <td>${item.tags?.join(", ") || ""}</td>
@@ -120,7 +125,7 @@
         });
     }
 
-    // Function to format date in YYYY-MM-DD format
+    // Format date in YYYY-MM-DD format
     function formatDate(date) {
         return date ? new Date(date).toISOString().split('T')[0] : "";
     }
@@ -128,29 +133,33 @@
     // Pagination functions
     function firstPage() {
         currentPage = 1;
-        fetchData();
+        renderTable();
+        document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
     }
 
     function prevPage() {
         if (currentPage > 1) {
             currentPage--;
-            fetchData();
+            renderTable();
+            document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
         }
     }
 
     function nextPage() {
         if (currentPage < totalPages) {
             currentPage++;
-            fetchData();
+            renderTable();
+            document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
         }
     }
 
     function lastPage() {
         currentPage = totalPages;
-        fetchData();
+        renderTable();
+        document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
     }
 
-    // Apply filters to the table based on user input
+    // Apply filters to the data
     function applyFilters() {
         let filteredData = allData.filter(item => {
             return (!document.getElementById("filterID").value || item.id.toString().includes(document.getElementById("filterID").value)) &&
@@ -165,16 +174,18 @@
                    (!document.getElementById("filterUpdated").value || formatDate(item.updated) === document.getElementById("filterUpdated").value);
         });
         allData = filteredData;
+        totalPages = Math.ceil(allData.length / itemsPerPage);  // Update total pages after filter
+        currentPage = 1;  // Reset to the first page after filtering
         renderTable();
     }
 
-    // Clear all filters and refresh the data
+    // Clear filters and reload all data
     function clearFilters() {
         document.querySelectorAll("select, input").forEach(input => input.value = "");
         fetchData();
     }
 
-    fetchData(); // Initial data fetch
+    fetchAllData();  // Initial fetch on page load
 </script>
 
 </body>
