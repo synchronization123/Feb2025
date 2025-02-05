@@ -29,6 +29,14 @@
             background-color: #007bff;
             color: white;
             text-align: center;
+            position: relative;
+        }
+        input.filter-box {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
         }
     </style>
 </head>
@@ -37,65 +45,22 @@
 <div class="container mt-4">
     <h2 class="text-center mb-3">Engagements Table</h2>
 
-    <!-- Filters -->
-    <div class="row g-2 mb-3">
-        <div class="col-md-3">
-            <select id="filterTags" class="form-select" onchange="applyFilters()">
-                <option value="">Select Tag</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select id="filterStatus" class="form-select" onchange="applyFilters()">
-                <option value="">Select Status</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select id="filterLead" class="form-select" onchange="applyFilters()">
-                <option value="">Select Lead</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select id="filterProduct" class="form-select" onchange="applyFilters()">
-                <option value="">Select Product</option>
-            </select>
-        </div>
-    </div>
-
-    <div class="row g-2 mb-3">
-        <div class="col-md-3">
-            <input type="date" id="filterCreatedFrom" class="form-control" onchange="applyFilters()">
-        </div>
-        <div class="col-md-3">
-            <input type="date" id="filterCreatedTo" class="form-control" onchange="applyFilters()">
-        </div>
-        <div class="col-md-3">
-            <input type="date" id="filterUpdatedFrom" class="form-control" onchange="applyFilters()">
-        </div>
-        <div class="col-md-3">
-            <input type="date" id="filterUpdatedTo" class="form-control" onchange="applyFilters()">
-        </div>
-    </div>
-
-    <div class="text-center mb-3">
-        <button class="btn btn-secondary" onclick="clearFilters()">Clear All</button>
-    </div>
-
     <!-- Table -->
     <div class="table-responsive">
         <table class="table table-bordered table-striped">
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Tags</th>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th>Version</th>
-                    <th>Created</th>
-                    <th>Status</th>
-                    <th>Lead</th>
-                    <th>Product</th>
-                    <th>Updated</th>
-                    <th>Notes</th>
+                    <th>ID <input type="text" id="filterID" class="filter-box" onkeyup="applyFilters()" placeholder="Search ID"></th>
+                    <th>Tags <input type="text" id="filterTags" class="filter-box" onkeyup="applyFilters()" placeholder="Search Tags"></th>
+                    <th>Name <input type="text" id="filterName" class="filter-box" onkeyup="applyFilters()" placeholder="Search Name"></th>
+                    <th>Description <input type="text" id="filterDescription" class="filter-box" onkeyup="applyFilters()" placeholder="Search Description"></th>
+                    <th>Version <input type="text" id="filterVersion" class="filter-box" onkeyup="applyFilters()" placeholder="Search Version"></th>
+                    <th>Created <input type="date" id="filterCreated" class="filter-box" onchange="applyFilters()"></th>
+                    <th>Status <input type="text" id="filterStatus" class="filter-box" onkeyup="applyFilters()" placeholder="Search Status"></th>
+                    <th>Lead <input type="text" id="filterLead" class="filter-box" onkeyup="applyFilters()" placeholder="Search Lead"></th>
+                    <th>Product <input type="text" id="filterProduct" class="filter-box" onkeyup="applyFilters()" placeholder="Search Product"></th>
+                    <th>Updated <input type="date" id="filterUpdated" class="filter-box" onchange="applyFilters()"></th>
+                    <th>Notes <input type="text" id="filterNotes" class="filter-box" onkeyup="applyFilters()" placeholder="Search Notes"></th>
                 </tr>
             </thead>
             <tbody id="tableBody"></tbody>
@@ -114,8 +79,7 @@
 
 <script>
     const baseUrl = "https://demo.defectdojo.org/api/v2/engagements/?o=-ordering";
-    let currentPage = 1, totalPages = 1;
-    let allTags = new Set(), allStatuses = new Set(), allLeads = new Set(), allProducts = new Set();
+    let currentPage = 1, totalPages = 1, allData = [];
 
     function fetchData() {
         let url = `${baseUrl}&limit=50&page=${currentPage}`;
@@ -123,8 +87,8 @@
             .then(response => response.json())
             .then(data => {
                 if (data.results) {
-                    updateFilters(data.results);
-                    renderTable(data.results);
+                    allData = data.results;
+                    renderTable();
                     totalPages = Math.ceil(data.count / 50);
                     document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
                 }
@@ -132,35 +96,10 @@
             .catch(error => console.error("Error fetching data:", error));
     }
 
-    function updateFilters(results) {
-        results.forEach(item => {
-            item.tags?.forEach(tag => allTags.add(tag));
-            if (item.status) allStatuses.add(item.status);
-            if (item.lead) allLeads.add(item.lead);
-            if (item.product) allProducts.add(item.product);
-        });
-
-        populateDropdown("filterTags", allTags);
-        populateDropdown("filterStatus", allStatuses);
-        populateDropdown("filterLead", allLeads);
-        populateDropdown("filterProduct", allProducts);
-    }
-
-    function populateDropdown(id, dataSet) {
-        let dropdown = document.getElementById(id);
-        dropdown.innerHTML = `<option value="">Select</option>`;
-        dataSet.forEach(value => {
-            let option = document.createElement("option");
-            option.value = value;
-            option.textContent = value;
-            dropdown.appendChild(option);
-        });
-    }
-
-    function renderTable(engagements) {
+    function renderTable() {
         const tbody = document.getElementById("tableBody");
-        tbody.innerHTML = "";
-        engagements.forEach(item => {
+        tbody.innerHTML = ""; // Clear previous data
+        allData.forEach(item => {
             tbody.innerHTML += `<tr>
                 <td>${item.id}</td>
                 <td>${item.tags?.join(", ") || ""}</td>
@@ -177,15 +116,55 @@
         });
     }
 
-    function formatDate(date) { return date ? new Date(date).toISOString().split('T')[0] : ""; }
+    function formatDate(date) {
+        return date ? new Date(date).toISOString().split('T')[0] : "";
+    }
 
-    function firstPage() { currentPage = 1; fetchData(); }
-    function prevPage() { if (currentPage > 1) currentPage--; fetchData(); }
-    function nextPage() { if (currentPage < totalPages) currentPage++; fetchData(); }
-    function lastPage() { currentPage = totalPages; fetchData(); }
+    function firstPage() {
+        currentPage = 1;
+        fetchData();
+    }
 
-    function applyFilters() { fetchData(); }
-    function clearFilters() { document.querySelectorAll("select, input").forEach(input => input.value = ""); fetchData(); }
+    function prevPage() {
+        if (currentPage > 1) {
+            currentPage--;
+            fetchData();
+        }
+    }
+
+    function nextPage() {
+        if (currentPage < totalPages) {
+            currentPage++;
+            fetchData();
+        }
+    }
+
+    function lastPage() {
+        currentPage = totalPages;
+        fetchData();
+    }
+
+    function applyFilters() {
+        let filteredData = allData.filter(item => {
+            return (!document.getElementById("filterID").value || item.id.toString().includes(document.getElementById("filterID").value)) &&
+                   (!document.getElementById("filterTags").value || (item.tags && item.tags.join(", ").toLowerCase().includes(document.getElementById("filterTags").value.toLowerCase()))) &&
+                   (!document.getElementById("filterName").value || (item.name && item.name.toLowerCase().includes(document.getElementById("filterName").value.toLowerCase()))) &&
+                   (!document.getElementById("filterDescription").value || (item.description && item.description.toLowerCase().includes(document.getElementById("filterDescription").value.toLowerCase()))) &&
+                   (!document.getElementById("filterVersion").value || (item.version && item.version.toLowerCase().includes(document.getElementById("filterVersion").value.toLowerCase()))) &&
+                   (!document.getElementById("filterCreated").value || formatDate(item.created) === document.getElementById("filterCreated").value) &&
+                   (!document.getElementById("filterStatus").value || (item.status && item.status.toLowerCase().includes(document.getElementById("filterStatus").value.toLowerCase()))) &&
+                   (!document.getElementById("filterLead").value || (item.lead && item.lead.toLowerCase().includes(document.getElementById("filterLead").value.toLowerCase()))) &&
+                   (!document.getElementById("filterProduct").value || (item.product && item.product.toLowerCase().includes(document.getElementById("filterProduct").value.toLowerCase()))) &&
+                   (!document.getElementById("filterUpdated").value || formatDate(item.updated) === document.getElementById("filterUpdated").value);
+        });
+        allData = filteredData;
+        renderTable();
+    }
+
+    function clearFilters() {
+        document.querySelectorAll("select, input").forEach(input => input.value = "");
+        fetchData();
+    }
 
     fetchData();
 </script>
