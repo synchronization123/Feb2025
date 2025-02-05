@@ -1,0 +1,160 @@
+import requests
+import pandas as pd
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
+from tkcalendar import DateEntry
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# Constants
+EXCEL_FILE = "usernames.xlsx"
+JIRA_API_URL = "https://jira.demo.almworks.com/rest/api/2/search?jql="
+JIRA_TOKEN = "mmmmmmmmmmmmmmmmmm"  # Store securely
+BATCH_SIZE = 10  # Number of users per API call (for optimization)
+
+
+class JiraReportApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("JIRA Report Generator")
+        self.root.geometry("600x400")  # Medium-sized window
+
+        # Date Inputs
+        tk.Label(root, text="Start Date:").pack(pady=5)
+        self.start_date = DateEntry(root, width=12, background="darkblue", foreground="white", date_pattern="yyyy-mm-dd")
+        self.start_date.pack(pady=5)
+
+        tk.Label(root, text="End Date:").pack(pady=5)
+        self.end_date = DateEntry(root, width=12, background="darkblue", foreground="white", date_pattern="yyyy-mm-dd")
+        self.end_date.pack(pady=5)
+
+        # Generate Report Button
+        self.generate_button = tk.Button(root, text="Generate Report", command=self.start_report)
+        self.generate_button.pack(pady=10)
+
+        # Log Console (Scrollable)
+        self.log_console = scrolledtext.ScrolledText(root, height=10, width=70, state="disabled")
+        self.log_console.pack(pady=10)
+
+    def log(self, message):
+        """Log messages in the UI console"""
+        self.log_console.config(state="normal")
+        self.log_console.insert(tk.END, message + "\n")
+        self.log_console.config(state="disabled")
+        self.log_console.yview(tk.END)  # Auto-scroll
+
+    def start_report(self):
+        """Run the report generation in a separate thread to avoid UI freeze"""
+        self.generate_button.config(state="disabled")
+        threading.Thread(target=self.generate_report, daemon=True).start()
+
+    def generate_report(self):
+        start_date = self.start_date.get_date().strftime("%Y-%m-%d")
+        end_date = self.end_date.get_date().strftime("%Y-%m-%d")
+
+        self.log(f"Fetching usernames from {EXCEL_FILE}...")
+        try:
+            df = pd.read_excel(EXCEL_FILE)
+            usernames = df['username'].tolist()
+            self.log(f"Loaded {len(usernames)} users.")
+        except Exception as e:
+            self.log(f"Error loading Excel file: {e}")
+            messagebox.showerror("Error", "Failed to load usernames.xlsx")
+            self.generate_button.config(state="normal")
+            return
+
+        # Generate JQL Queries in Batches
+        accepted_jqls, rejected_jqls = self.create_batches(usernames, start_date, end_date)
+
+        # Fetch counts in parallel
+        self.log("Fetching accepted & rejected counts in parallel...")
+        with ThreadPoolExecutor() as executor:
+            accepted_totals = list(executor.map(self.fetch_total, accepted_jqls))
+            rejected_totals = list(executor.map(self.fetch_total, rejected_jqls))
+
+        accepted_total = sum(accepted_totals)
+        rejected_total = sum(rejected_totals)
+
+        self.log(f"Accepted Count: {accepted_total}")
+        self.log(f"Rejected Count: {rejected_total}")
+
+        # Generate HTML Report with table format
+        filename = f"Accepted-Rejected-Date-{start_date}-{end_date}.html"
+        self.log(f"Saving report as {filename}...")
+
+        html_content = f"""
+        <html>
+        <head>
+            <title>JIRA Report</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                table {{ width: 50%; border-collapse: collapse; margin-top: 20px; margin-left: auto; margin-right: auto; }}
+                th, td {{ border: 1px solid black; padding: 10px; text-align: center; }}
+                th {{ background-color: #f2f2f2; }}
+                h2, p {{ text-align: center; }}
+            </style>
+        </head>
+        <body>
+            <h2>JIRA Status Report</h2>
+            <p><b>Date Range:</b> {start_date} to {end_date}</p>
+            
+            <table>
+                <tr>
+                    <th>Accepted</th>
+                    <th>Rejected</th>
+                </tr>
+                <tr>
+                    <td>{accepted_total}</td>
+                    <td>{rejected_total}</td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        """
+
+        with open(filename, "w", encoding="utf-8") as file:
+            file.write(html_content)
+
+        self.log(f"Report saved: {filename}")
+        messagebox.showinfo("Success", f"Report generated successfully as {filename}!")
+        self.generate_button.config(state="normal")
+
+    def create_batches(self, usernames, start_date, end_date):
+        """Splits usernames into batches & generates JQL queries"""
+        accepted_batches = []
+        rejected_batches = []
+
+        for i in range(0, len(usernames), BATCH_SIZE):
+            batch_users = usernames[i:i + BATCH_SIZE]
+            accepted_jql = " OR ".join(
+                [f'status changed from "TO DO" to "IN PROGRESS" during ({start_date}, {end_date}) by {user}'
+                 for user in batch_users])
+            rejected_jql = " OR ".join(
+                [f'status changed from "IN PROGRESS" to "DONE" during ({start_date}, {end_date}) by {user}'
+                 for user in batch_users])
+
+            accepted_batches.append(accepted_jql)
+            rejected_batches.append(rejected_jql)
+
+        return accepted_batches, rejected_batches
+
+    def fetch_total(self, jql):
+        """Fetch total count from JIRA API"""
+        headers = {
+            "Authorization": f"Bearer {JIRA_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        response = requests.get(f"{JIRA_API_URL}{jql}", headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('total', 0)
+        else:
+            self.log(f"API Error ({response.status_code}): {response.text}")
+            return 0
+
+
+# Run UI
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = JiraReportApp(root)
+    root.mainloop()
