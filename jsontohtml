@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Data to Table</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .pagination {
+            padding: 10px;
+            text-align: center;
+        }
+        .pagination button {
+            padding: 5px 10px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        .filter-input {
+            margin: 10px 0;
+            padding: 5px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <input type="text" id="filterInput" class="filter-input" placeholder="Search...">
+    <table id="dataTable">
+        <thead>
+            <!-- Dynamic headers will be inserted here -->
+        </thead>
+        <tbody>
+            <!-- Data rows will be inserted here -->
+        </tbody>
+    </table>
+    
+    <div class="pagination" id="pagination"></div>
+
+    <script>
+        let currentPage = 1;
+        let rowsPerPage = 5;
+        let tableData = [];
+
+        // Fetch data from the API
+        async function fetchData() {
+            try {
+                let response = await fetch('https://api.example.com/data');  // Replace with your API URL
+                let data = await response.json();
+                tableData = data;  // Store the data globally
+                displayTable(data);
+                setupPagination(data);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
+        // Display data in table
+        function displayTable(data) {
+            const table = document.getElementById('dataTable');
+            const thead = table.querySelector('thead');
+            const tbody = table.querySelector('tbody');
+            
+            // Clear existing table content
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+            
+            // Create dynamic headers based on the data
+            const headers = Object.keys(data[0]);
+            let headerRow = '<tr>';
+            headers.forEach(header => {
+                headerRow += `<th>${header}</th>`;
+            });
+            headerRow += '</tr>';
+            thead.innerHTML = headerRow;
+            
+            // Create table rows based on the data
+            let rows = '';
+            data.forEach(item => {
+                rows += '<tr>';
+                headers.forEach(header => {
+                    rows += `<td>${item[header]}</td>`;
+                });
+                rows += '</tr>';
+            });
+            tbody.innerHTML = rows;
+        }
+
+        // Setup pagination
+        function setupPagination(data) {
+            const pagination = document.getElementById('pagination');
+            const totalPages = Math.ceil(data.length / rowsPerPage);
+
+            let paginationButtons = '';
+            for (let i = 1; i <= totalPages; i++) {
+                paginationButtons += `<button onclick="goToPage(${i})">${i}</button>`;
+            }
+            pagination.innerHTML = paginationButtons;
+        }
+
+        // Go to a specific page
+        function goToPage(page) {
+            currentPage = page;
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = startIndex + rowsPerPage;
+            const paginatedData = tableData.slice(startIndex, endIndex);
+            displayTable(paginatedData);
+        }
+
+        // Filter table data
+        document.getElementById('filterInput').addEventListener('input', function() {
+            const filterText = this.value.toLowerCase();
+            const filteredData = tableData.filter(item => {
+                return Object.values(item).some(val =>
+                    val.toString().toLowerCase().includes(filterText)
+                );
+            });
+            displayTable(filteredData);
+            setupPagination(filteredData);
+        });
+
+        // Initial data fetch
+        fetchData();
+    </script>
+
+</body>
+</html>
