@@ -1,0 +1,91 @@
+import requests
+import json
+import openpyxl
+
+# SonarQube API details
+SONAR_HOST = "https://sonar.crm.com"
+PROJECTS_API = f"{SONAR_HOST}/api/components/search_projects?f=analysisDate&ps=500"
+ISSUES_API = f"{SONAR_HOST}/api/issues/search"
+AUTH_TOKEN = "hdjdjdjdjd"
+
+# Headers for authentication
+HEADERS = {
+    "Authorization": f"Bearer {AUTH_TOKEN}"
+}
+
+# Fetch project keys
+def get_projects():
+    response = requests.get(PROJECTS_API, headers=HEADERS)
+    if response.status_code == 200:
+        projects = response.json().get("components", [])
+        return [proj["key"] for proj in projects]
+    else:
+        print("Failed to fetch projects:", response.text)
+        return []
+
+# Fetch issues for a given project key
+def get_issues(project_key):
+    params = {
+        "componentKeys": project_key,
+        "types": "VULNERABILITY",
+        "resolved": "false"
+    }
+    response = requests.get(ISSUES_API, headers=HEADERS, params=params)
+    if response.status_code == 200:
+        return response.json().get("issues", [])
+    else:
+        print(f"Failed to fetch issues for {project_key}:", response.text)
+        return []
+
+# Extract relevant details from issues
+def process_issues(issues):
+    extracted_data = []
+    for issue in issues:
+        comments = issue.get("comments", [])
+        comment_details = ", ".join([f"{c['login']}: {c['markdown']}" for c in comments])
+
+        extracted_data.append([
+            issue.get("key"),
+            issue.get("severity"),
+            issue.get("component"),
+            issue.get("line", "N/A"),
+            issue.get("status"),
+            issue.get("message"),
+            comment_details
+        ])
+    return extracted_data
+
+# Write to Excel
+def save_to_excel(data):
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "SonarQube Issues"
+
+    # Header row
+    headers = ["Issue Key", "Severity", "Component", "Line", "Status", "Message", "Comments"]
+    sheet.append(headers)
+
+    # Write data
+    for row in data:
+        sheet.append(row)
+
+    # Save file
+    workbook.save("Issues.xlsx")
+    print("Issues.xlsx has been created successfully.")
+
+# Main function
+def main():
+    all_data = []
+    projects = get_projects()
+    for project_key in projects:
+        print(f"Fetching issues for project: {project_key}")
+        issues = get_issues(project_key)
+        all_data.extend(process_issues(issues))
+    
+    if all_data:
+        save_to_excel(all_data)
+    else:
+        print("No issues found.")
+
+if __name__ == "__main__":
+    main()
