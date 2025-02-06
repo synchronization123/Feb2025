@@ -1,242 +1,213 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Engagements Table</title>
-
-    <!-- Bootstrap 5 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Select2 CSS for searchable dropdown -->
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/css/select2.min.css" rel="stylesheet" />
-    
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/js/select2.min.js"></script>
-
-    <style>
-        body {
-            background-color: #f8f9fa;
-        }
-        .container {
-            max-width: 100%;
-            margin: auto;
-            background: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
-        }
-        table {
-            width: 100%;
-            margin-top: 10px;
-        }
-        th {
-            background-color: #007bff;
-            color: white;
-            text-align: center;
-            position: relative;
-        }
-        input.filter-box, select.filter-box {
-            width: 100%;
-            padding: 5px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            text-align: center;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Engagements Table</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f4f4f4;
+    }
+    .filters {
+      margin-bottom: 20px;
+    }
+    .filters input, .filters select {
+      margin-right: 10px;
+      padding: 5px;
+    }
+    .pagination {
+      margin-top: 20px;
+    }
+    .pagination button {
+      margin-right: 5px;
+      padding: 5px 10px;
+    }
+  </style>
 </head>
 <body>
+  <h1>Engagements Table</h1>
+  <div class="filters">
+    <input type="text" id="filter-tags" placeholder="Filter by Tags">
+    <input type="text" id="filter-name" placeholder="Filter by Name">
+    <input type="text" id="filter-description" placeholder="Filter by Description">
+    <input type="text" id="filter-version" placeholder="Filter by Version">
+    <input type="text" id="filter-lead" placeholder="Filter by Lead">
+    <input type="text" id="filter-product" placeholder="Filter by Product">
+    <label for="filter-created-start">Created:</label>
+    <input type="date" id="filter-created-start">
+    <input type="date" id="filter-created-end">
+    <label for="filter-updated-start">Updated:</label>
+    <input type="date" id="filter-updated-start">
+    <input type="date" id="filter-updated-end">
+    <button onclick="applyFilters()">Apply Filters</button>
+    <button onclick="clearFilters()">Clear Filters</button>
+  </div>
+  <table id="engagements-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Tags</th>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Version</th>
+        <th>Created</th>
+        <th>Status</th>
+        <th>Lead</th>
+        <th>Product</th>
+        <th>Updated</th>
+        <th>Notes</th>
+        <th>Edit</th>
+        <th>Close</th>
+        <th>Add Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Table rows will be populated here -->
+    </tbody>
+  </table>
+  <div class="pagination">
+    <button onclick="goToFirstPage()">First</button>
+    <button onclick="goToPreviousPage()">Previous</button>
+    <button onclick="goToNextPage()">Next</button>
+    <button onclick="goToLastPage()">Last</button>
+  </div>
 
-<div class="container mt-4">
-    <h2 class="text-center mb-3">Engagements Table</h2>
-
-    <!-- Filters -->
-    <div class="row g-2 mb-3">
-        <div class="col-md-3">
-            <select id="filterTags" class="form-select filter-box" onchange="applyFilters()">
-                <option value="">Select Tag</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select id="filterStatus" class="form-select filter-box" onchange="applyFilters()">
-                <option value="">Select Status</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select id="filterLead" class="form-select filter-box" onchange="applyFilters()">
-                <option value="">Select Lead</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select id="filterProduct" class="form-select filter-box" onchange="applyFilters()">
-                <option value="">Select Product</option>
-            </select>
-        </div>
-    </div>
-
-    <div class="row g-2 mb-3">
-        <div class="col-md-3">
-            <input type="date" id="filterCreated" class="filter-box" onchange="applyFilters()">
-        </div>
-        <div class="col-md-3">
-            <input type="date" id="filterUpdated" class="filter-box" onchange="applyFilters()">
-        </div>
-    </div>
-
-    <div class="text-center mb-3">
-        <button class="btn btn-secondary" onclick="clearFilters()">Clear All Filters</button>
-    </div>
-
-    <!-- Table -->
-    <div class="table-responsive">
-        <table class="table table-bordered table-striped">
-            <thead>
-                <tr>
-                    <th>ID <input type="text" id="filterID" class="filter-box" onkeyup="applyFilters()" placeholder="Search ID"></th>
-                    <th>Tags <input type="text" id="filterTagsSearch" class="filter-box" onkeyup="applyFilters()" placeholder="Search Tags"></th>
-                    <th>Name <input type="text" id="filterName" class="filter-box" onkeyup="applyFilters()" placeholder="Search Name"></th>
-                    <th>Description <input type="text" id="filterDescription" class="filter-box" onkeyup="applyFilters()" placeholder="Search Description"></th>
-                    <th>Version <input type="text" id="filterVersion" class="filter-box" onkeyup="applyFilters()" placeholder="Search Version"></th>
-                    <th>Created <input type="date" id="filterCreatedDate" class="filter-box" onchange="applyFilters()"></th>
-                    <th>Status <input type="text" id="filterStatusSearch" class="filter-box" onkeyup="applyFilters()" placeholder="Search Status"></th>
-                    <th>Lead <input type="text" id="filterLeadSearch" class="filter-box" onkeyup="applyFilters()" placeholder="Search Lead"></th>
-                    <th>Product <input type="text" id="filterProductSearch" class="filter-box" onkeyup="applyFilters()" placeholder="Search Product"></th>
-                    <th>Updated <input type="date" id="filterUpdatedDate" class="filter-box" onchange="applyFilters()"></th>
-                    <th>Notes <input type="text" id="filterNotes" class="filter-box" onkeyup="applyFilters()" placeholder="Search Notes"></th>
-                </tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-        </table>
-    </div>
-
-    <!-- Pagination -->
-    <div class="text-center mt-3">
-        <button class="btn btn-outline-primary" onclick="firstPage()">First</button>
-        <button class="btn btn-outline-primary" onclick="prevPage()">Previous</button>
-        <span id="pageInfo" class="mx-2"></span>
-        <button class="btn btn-outline-primary" onclick="nextPage()">Next</button>
-        <button class="btn btn-outline-primary" onclick="lastPage()">Last</button>
-    </div>
-</div>
-
-<script>
-    const baseUrl = "https://demo.defectdojo.org/api/v2/engagements/?o=-ordering";
-    let allData = [];
+  <script>
+    const baseUrl = "https://demo.defectdojo.org/api/v2/engagements";
     let currentPage = 1;
-    const itemsPerPage = 50;
     let totalPages = 1;
+    let filters = {};
 
-    // Fetch all data at the start
-    function fetchAllData() {
-        let url = `${baseUrl}&limit=1000`; // Fetch larger data
-        fetch(url)
-            .then(response => response.json())
-            .then(data => {
-                if (data.results) {
-                    allData = data.results;
-                    totalPages = Math.ceil(allData.length / itemsPerPage);
-                    renderTable();
-                    document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
-                }
-            })
-            .catch(error => console.error("Error fetching data:", error));
+    // Function to fetch data from the API
+    async function fetchData(page = 1) {
+      const queryParams = new URLSearchParams({
+        ...filters,
+        page: page,
+        page_size: 10,
+      }).toString();
+
+      const response = await fetch(`${baseUrl}?${queryParams}`);
+      const data = await response.json();
+      return data;
     }
 
-    // Render table based on the data and pagination
-    function renderTable() {
-        const tbody = document.getElementById("tableBody");
-        tbody.innerHTML = ""; // Clear previous rows
-        const start = (currentPage - 1) * itemsPerPage;
-        const end = start + itemsPerPage;
-        const currentPageData = allData.slice(start, end);
+    // Function to populate the table with data
+    function populateTable(data) {
+      const tbody = document.querySelector("#engagements-table tbody");
+      tbody.innerHTML = "";
 
-        currentPageData.forEach(item => {
-            tbody.innerHTML += `<tr>
-                <td>${item.id}</td>
-                <td>${item.tags?.join(", ") || ""}</td>
-                <td>${item.name || ""}</td>
-                <td>${item.description || ""}</td>
-                <td>${item.version || ""}</td>
-                <td>${formatDate(item.created)}</td>
-                <td>${item.status || ""}</td>
-                <td>${item.lead || ""}</td>
-                <td>${item.product || ""}</td>
-                <td>${formatDate(item.updated)}</td>
-                <td>${item.notes || "N/A"}</td>
-            </tr>`;
-        });
+      data.results.forEach((engagement) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${engagement.id}</td>
+          <td>${engagement.tags.join(", ")}</td>
+          <td>${engagement.name}</td>
+          <td>${engagement.description}</td>
+          <td>${engagement.version}</td>
+          <td>${engagement.created}</td>
+          <td>${engagement.status}</td>
+          <td>${engagement.lead}</td>
+          <td>${engagement.product}</td>
+          <td>${engagement.updated}</td>
+          <td>${engagement.notes}</td>
+          <td><button onclick="editEngagement(${engagement.id})">Edit</button></td>
+          <td><button onclick="closeEngagement(${engagement.id})">Close</button></td>
+          <td><button onclick="addNotes(${engagement.id})">Add Notes</button></td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      totalPages = Math.ceil(data.count / 10);
+      updatePagination();
     }
 
-    // Format date in YYYY-MM-DD format
-    function formatDate(date) {
-        return date ? new Date(date).toISOString().split('T')[0] : "";
-    }
-
-    // Pagination controls
-    function firstPage() {
-        currentPage = 1;
-        renderTable();
-        document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
-    }
-
-    function prevPage() {
-        if (currentPage > 1) {
-            currentPage--;
-            renderTable();
-            document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
-        }
-    }
-
-    function nextPage() {
-        if (currentPage < totalPages) {
-            currentPage++;
-            renderTable();
-            document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
-        }
-    }
-
-    function lastPage() {
-        currentPage = totalPages;
-        renderTable();
-        document.getElementById("pageInfo").innerText = `Page ${currentPage} of ${totalPages}`;
-    }
-
-    // Apply filters to the table
+    // Function to apply filters
     function applyFilters() {
-        let filteredData = allData.filter(item => {
-            return (!document.getElementById("filterID").value || item.id.toString().includes(document.getElementById("filterID").value)) &&
-                   (!document.getElementById("filterTags").value || (item.tags && item.tags.join(", ").toLowerCase().includes(document.getElementById("filterTags").value.toLowerCase()))) &&
-                   (!document.getElementById("filterName").value || (item.name && item.name.toLowerCase().includes(document.getElementById("filterName").value.toLowerCase()))) &&
-                   (!document.getElementById("filterDescription").value || (item.description && item.description.toLowerCase().includes(document.getElementById("filterDescription").value.toLowerCase()))) &&
-                   (!document.getElementById("filterVersion").value || (item.version && item.version.toLowerCase().includes(document.getElementById("filterVersion").value.toLowerCase()))) &&
-                   (!document.getElementById("filterCreated").value || formatDate(item.created) === document.getElementById("filterCreated").value) &&
-                   (!document.getElementById("filterStatus").value || (item.status && item.status.toLowerCase().includes(document.getElementById("filterStatus").value.toLowerCase()))) &&
-                   (!document.getElementById("filterLead").value || (item.lead && item.lead.toLowerCase().includes(document.getElementById("filterLead").value.toLowerCase()))) &&
-                   (!document.getElementById("filterProduct").value || (item.product && item.product.toLowerCase().includes(document.getElementById("filterProduct").value.toLowerCase()))) &&
-                   (!document.getElementById("filterUpdated").value || formatDate(item.updated) === document.getElementById("filterUpdated").value);
-        });
-        allData = filteredData;
-        totalPages = Math.ceil(allData.length / itemsPerPage);
-        currentPage = 1; // Reset to the first page
-        renderTable();
+      filters = {
+        tags: document.getElementById("filter-tags").value,
+        name: document.getElementById("filter-name").value,
+        description: document.getElementById("filter-description").value,
+        version: document.getElementById("filter-version").value,
+        lead: document.getElementById("filter-lead").value,
+        product: document.getElementById("filter-product").value,
+        created__gte: document.getElementById("filter-created-start").value,
+        created__lte: document.getElementById("filter-created-end").value,
+        updated__gte: document.getElementById("filter-updated-start").value,
+        updated__lte: document.getElementById("filter-updated-end").value,
+      };
+
+      currentPage = 1;
+      fetchData(currentPage).then(populateTable);
     }
 
-    // Clear filters and reload the full dataset
+    // Function to clear filters
     function clearFilters() {
-        document.querySelectorAll("select, input").forEach(input => input.value = "");
-        fetchAllData();
+      document.getElementById("filter-tags").value = "";
+      document.getElementById("filter-name").value = "";
+      document.getElementById("filter-description").value = "";
+      document.getElementById("filter-version").value = "";
+      document.getElementById("filter-lead").value = "";
+      document.getElementById("filter-product").value = "";
+      document.getElementById("filter-created-start").value = "";
+      document.getElementById("filter-created-end").value = "";
+      document.getElementById("filter-updated-start").value = "";
+      document.getElementById("filter-updated-end").value = "";
+
+      filters = {};
+      currentPage = 1;
+      fetchData(currentPage).then(populateTable);
     }
 
-    // Initialize everything
-    $(document).ready(function() {
-        // Initialize searchable dropdowns using Select2
-        $('#filterTags').select2();
-        $('#filterStatus').select2();
-        $('#filterLead').select2();
-        $('#filterProduct').select2();
-        
-        fetchAllData(); // Initial data fetch
-    });
-</script>
+    // Pagination functions
+    function goToFirstPage() {
+      currentPage = 1;
+      fetchData(currentPage).then(populateTable);
+    }
 
+    function goToPreviousPage() {
+      if (currentPage > 1) {
+        currentPage--;
+        fetchData(currentPage).then(populateTable);
+      }
+    }
+
+    function goToNextPage() {
+      if (currentPage < totalPages) {
+        currentPage++;
+        fetchData(currentPage).then(populateTable);
+      }
+    }
+
+    function goToLastPage() {
+      currentPage = totalPages;
+      fetchData(currentPage).then(populateTable);
+    }
+
+    function updatePagination() {
+      console.log(`Page ${currentPage} of ${totalPages}`);
+    }
+
+    // Refresh table data every 11 minutes
+    setInterval(() => {
+      fetchData(currentPage).then(populateTable);
+    }, 11 * 60 * 1000);
+
+    // Initial data fetch
+    fetchData(currentPage).then(populateTable);
+  </script>
 </body>
 </html>
