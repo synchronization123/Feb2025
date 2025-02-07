@@ -27,7 +27,7 @@ HARDCODED_ENVIRONMENT = 1  # Environment
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
-# Function to handle requests with retries & pagination
+# Function to handle requests with retries
 def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3, delay=2):
     for attempt in range(max_retries):
         try:
@@ -46,39 +46,17 @@ def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3
             time.sleep(delay)
     return None
 
-# Function to fetch all paginated results from an API
-def fetch_paginated_results(base_url, headers):
-    results = []
-    page = 1
-
-    while True:
-        url = f"{base_url}&page={page}"
-        response = request_with_retry(url, "GET", headers=headers)
-        if response is None:
-            break
-
-        data = response.json()
-        if "results" in data:
-            results.extend(data["results"])
-
-        if not data.get("next"):  # If there are no more pages, stop
-            break
-
-        page += 1
-
-    return results
-
-# Function to fetch Jira issues with pagination
+# Function to fetch ALL Jira issues using pagination
 def get_jira_issues(version):
-    """Fetch Jira issue keys where labels in (version) OR 'Build(s)' in (version) with pagination."""
+    """Fetch all Jira issue keys where labels in (version) OR 'Build(s)' in (version), using pagination."""
     if not version:
         logger.warning("⚠️ No version provided, skipping Jira issue fetching.")
         return []
 
     jql_query = f'labels in ("{version}") OR "Build(s)" in ("{version}")'
-    start_at = 0
-    max_results = 50  # Jira API default limit
     issue_keys = []
+    start_at = 0
+    max_results = 50  # Jira returns 50 issues per request by default
 
     while True:
         url = f"{JIRA_API_URL}?jql={jql_query}&fields=key&startAt={start_at}&maxResults={max_results}"
@@ -88,27 +66,33 @@ def get_jira_issues(version):
             break
 
         issues = response.json().get("issues", [])
-        issue_keys.extend([issue["key"] for issue in issues])
-
-        if len(issues) < max_results:  # Stop if fewer results returned
+        if not issues:
             break
 
-        start_at += max_results  # Move to the next page
+        issue_keys.extend([issue["key"] for issue in issues])
+        start_at += max_results  # Move to next page
 
-    logger.info(f"Fetched {len(issue_keys)} Jira issue keys for version '{version}'")
+    logger.info(f"Fetched {len(issue_keys)} Jira issue keys for version '{version}'.")
     return issue_keys
 
 # Function to fetch existing tests from DefectDojo
 def get_existing_tests(engagement_id):
     url = f"{DEFECTDOJO_TESTS_URL}?engagement={engagement_id}"
-    tests = fetch_paginated_results(url, HEADERS_DEFECTDOJO)
+    response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
+    if response is None:
+        return set()
+    
+    tests = response.json().get("results", [])
     return {test["title"].strip().lower() for test in tests if test["title"]}
 
 # Function to fetch engagement details (including version)
 def get_engagement_details(engagement_id):
     url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/"
     response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
-    return response.json() if response else None
+    if response is None:
+        return None
+    
+    return response.json()
 
 # Function to create tests in DefectDojo
 def create_tests_in_defectdojo(engagement_id):
@@ -122,16 +106,16 @@ def create_tests_in_defectdojo(engagement_id):
         logger.info(f"Skipping engagement {engagement_id}: Status 'completed'.")
         return
 
-    version = engagement_details.get("version", "").strip()
+    lead = engagement_details.get("lead")
+    target_start = engagement_details.get("target_start") or datetime.now().strftime("%Y-%m-%d")
+    target_end = engagement_details.get("target_end") or (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    version = engagement_details.get("version", "").strip()  # Fetch version from engagement
+
     if not version:
         logger.info(f"Skipping engagement {engagement_id}: No version found.")
         return
 
-    lead = engagement_details.get("lead")
-    target_start = engagement_details.get("target_start") or datetime.now().strftime("%Y-%m-%d")
-    target_end = engagement_details.get("target_end") or (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-
-    # Fetch Jira issues
+    # Fetch all Jira issues based on version (with pagination)
     jira_issue_keys = get_jira_issues(version)
     if not jira_issue_keys:
         logger.info(f"No Jira issue keys found for version '{version}', skipping test creation.")
@@ -165,15 +149,21 @@ def create_tests_in_defectdojo(engagement_id):
         else:
             logger.error(f"❌ Failed to create test '{test_title}'.")
 
-# Function to fetch all engagement IDs from DefectDojo
+# Function to fetch engagement IDs from DefectDojo
 def fetch_engagement_ids_from_defectdojo(tags_filter="pci"):
-    url = f"{DEFECTDOJO_ENGAGEMENTS_URL}?tags={tags_filter}&status=Not Started&limit=100"
-    engagements = fetch_paginated_results(url, HEADERS_DEFECTDOJO)
-
-    url = f"{DEFECTDOJO_ENGAGEMENTS_URL}?tags={tags_filter}&status=In Progress&limit=100"
-    engagements.extend(fetch_paginated_results(url, HEADERS_DEFECTDOJO))
-
-    return [engagement["id"] for engagement in engagements]
+    engagement_ids = []
+    
+    for status in ["Not Started", "In Progress"]:
+        url = f"{DEFECTDOJO_ENGAGEMENTS_URL}?tags={tags_filter}&status={status}"
+        response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
+        if response and response.status_code == 200:
+            engagements = response.json().get("results", [])
+            engagement_ids.extend([engagement["id"] for engagement in engagements])
+    
+    if not engagement_ids:
+        logger.warning("⚠️ No engagements found.")
+    
+    return engagement_ids
 
 # Main execution function
 def main():
