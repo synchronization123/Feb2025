@@ -14,10 +14,15 @@ HEADERS_DEFECTDOJO = {
     'Content-Type': 'application/json'
 }
 
-# Function to log messages inside the GUI
-def log_message(log_widget, message):
-    log_widget.insert(tk.END, message + "\n")
-    log_widget.see(tk.END)
+# Function to log messages inside the Create Tests tab
+def log_message(message):
+    log_text.insert(tk.END, message + "\n")
+    log_text.see(tk.END)
+
+# Function to log messages inside the Manage Tests tab
+def log_manage_message(message):
+    manage_log_text.insert(tk.END, message + "\n")
+    manage_log_text.see(tk.END)
 
 # Function to handle API requests with retries
 def request_with_retry(url, method="GET", json=None, max_retries=3, delay=2):
@@ -27,8 +32,12 @@ def request_with_retry(url, method="GET", json=None, max_retries=3, delay=2):
             if response.status_code in [200, 201, 204]:
                 return response
             else:
-                return None
-        except requests.exceptions.RequestException:
+                log_message(f"❌ Error {response.status_code}: {response.text}")
+                log_manage_message(f"❌ Error {response.status_code}: {response.text}")
+                break
+        except requests.exceptions.RequestException as e:
+            log_message(f"❌ Network error: {str(e)}. Retrying in {delay} sec...")
+            log_manage_message(f"❌ Network error: {str(e)}. Retrying in {delay} sec...")
             time.sleep(delay)
     return None
 
@@ -53,13 +62,79 @@ def get_existing_tests(engagement_id):
 
     return existing_tests
 
+# Extract JIRA IDs from description
+def get_jira_issue_keys_from_description(description):
+    pattern = r'\b[a-zA-Z]+-\d+\b'
+    return list(set([key.upper() for key in re.findall(pattern, description)]))
+
 # Fetch engagement details
 def get_engagement_details(engagement_id):
     url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/"
     response = request_with_retry(url)
     return response.json() if response else None
 
-# Fetch and display existing tests in Manage Tests tab
+# Create tests
+def create_tests():
+    engagement_id = engagement_id_entry.get().strip()
+    description = description_text.get("1.0", tk.END).strip()
+
+    if not engagement_id or not description:
+        messagebox.showwarning("Missing Input", "Enter Engagement ID and Description.")
+        return
+
+    engagement_details = get_engagement_details(engagement_id)
+    if not engagement_details:
+        log_message(f"❌ Failed to fetch engagement {engagement_id}.")
+        return
+
+    if engagement_details.get("status", "").lower() == "completed":
+        log_message(f"⚠️ Engagement {engagement_id} is completed. Skipping test creation.")
+        return
+
+    issue_keys = get_jira_issue_keys_from_description(description)
+    if not issue_keys:
+        log_message(f"⚠️ No JIRA issues found. Skipping.")
+        return
+
+    existing_tests = get_existing_tests(engagement_id)
+    created_tests = []
+
+    for issue_key in issue_keys:
+        if issue_key in existing_tests.values():
+            log_message(f"⚠️ Test '{issue_key}' already exists. Skipping.")
+            continue
+
+        payload = {
+            "engagement": engagement_id,
+            "title": issue_key,
+            "description": "",
+            "test_type": engagement_details.get("test_type"),
+            "scan_type": engagement_details.get("scan_type", "Unknown"),
+            "environment": engagement_details.get("environment", 1),
+            "lead": engagement_details.get("lead", 1),
+            "target_start": engagement_details.get("target_start", datetime.now().strftime("%Y-%m-%d")),
+            "target_end": engagement_details.get("target_end", (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")),
+        }
+
+        response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", json=payload)
+
+        if response and response.status_code == 201:
+            test_id = response.json().get("id")
+            log_message(f"✅ Created Test '{issue_key}' (ID: {test_id})")
+            created_tests.append((issue_key, test_id))
+
+    if created_tests:
+        save_to_excel(created_tests)
+
+# Save to Excel
+def save_to_excel(data):
+    df = pd.DataFrame(data, columns=["JIRA ID", "Test ID"])
+    file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Files", "*.xlsx")])
+    if file_path:
+        df.to_excel(file_path, index=False)
+        log_message(f"📂 Saved to {file_path}")
+
+# Fetch tests for management
 def fetch_tests():
     engagement_id = manage_engagement_entry.get().strip()
     if not engagement_id:
@@ -69,21 +144,12 @@ def fetch_tests():
     tests = get_existing_tests(engagement_id)
     test_list.delete(*test_list.get_children())
 
-    if not tests:
-        log_message(manage_log_text, f"⚠️ No tests found for engagement {engagement_id}.")
-        return
-
     for test_id, test_title in tests.items():
         test_list.insert("", "end", values=(test_id, test_title))
 
-    log_message(manage_log_text, f"✅ Fetched {len(tests)} tests for engagement {engagement_id}.")
+    log_manage_message(f"✅ Loaded {len(tests)} tests for Engagement {engagement_id}")
 
-# Select all tests
-def select_all_tests():
-    for item in test_list.get_children():
-        test_list.selection_add(item)
-
-# Delete selected tests
+# Delete tests
 def delete_tests():
     selected_items = test_list.selection()
     if not selected_items:
@@ -96,8 +162,13 @@ def delete_tests():
         response = request_with_retry(url, method="DELETE")
 
         if response and response.status_code == 204:
-            log_message(manage_log_text, f"🗑️ Deleted Test ID {test_id}")
+            log_manage_message(f"🗑️ Deleted Test ID {test_id}")
             test_list.delete(item)
+
+# Select all tests
+def select_all_tests():
+    for item in test_list.get_children():
+        test_list.selection_add(item)
 
 # GUI Setup
 root = tk.Tk()
@@ -105,10 +176,26 @@ root.title("DefectDojo Test Manager")
 root.geometry("800x600")
 
 notebook = ttk.Notebook(root)
+tab_create = ttk.Frame(notebook)
 tab_manage = ttk.Frame(notebook)
 
+notebook.add(tab_create, text="Create Tests")
 notebook.add(tab_manage, text="Manage Tests")
 notebook.pack(expand=True, fill="both")
+
+# Create Tests Tab
+ttk.Label(tab_create, text="Engagement ID:").pack()
+engagement_id_entry = ttk.Entry(tab_create, width=50)
+engagement_id_entry.pack()
+
+ttk.Label(tab_create, text="Description (JIRA Issues):").pack()
+description_text = scrolledtext.ScrolledText(tab_create, width=60, height=10)
+description_text.pack()
+
+ttk.Button(tab_create, text="Create Tests", command=create_tests).pack()
+
+log_text = scrolledtext.ScrolledText(tab_create, width=60, height=10)
+log_text.pack()
 
 # Manage Tests Tab
 ttk.Label(tab_manage, text="Engagement ID:").pack()
@@ -124,9 +211,7 @@ test_list.pack()
 ttk.Button(tab_manage, text="Select All", command=select_all_tests).pack()
 ttk.Button(tab_manage, text="Delete Selected", command=delete_tests).pack()
 
-# Separate Console for Logs under Manage Tests
-ttk.Label(tab_manage, text="Logs:").pack()
-manage_log_text = scrolledtext.ScrolledText(tab_manage, width=80, height=10)
+manage_log_text = scrolledtext.ScrolledText(tab_manage, width=60, height=10)
 manage_log_text.pack()
 
 root.mainloop()
