@@ -28,6 +28,7 @@ logger = logging.getLogger()
 
 # Function to handle requests with retries
 def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3, delay=2):
+    """Handles API requests with retries."""
     for attempt in range(max_retries):
         try:
             response = requests.request(method, url, headers=headers, json=json)
@@ -36,7 +37,6 @@ def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3
             else:
                 logger.error(f"❌ Error: {response.status_code} - {response.text}")
                 break
-
         except requests.exceptions.RequestException as e:
             logger.error(f"❌ Network error: {str(e)}. Retrying in {delay} seconds...")
             time.sleep(delay)
@@ -47,7 +47,7 @@ def get_jira_issues(version):
     """Fetch all Jira issue keys where labels in (version) OR 'Build(s)' in (version), using pagination."""
     if not version:
         logger.warning("⚠️ No version provided, skipping Jira issue fetching.")
-        return []
+        return set()
 
     jql_query = f'labels in ("{version}") OR "Build(s)" in ("{version}")'
     issue_keys = set()
@@ -120,7 +120,7 @@ def create_tests_in_defectdojo(engagement_id):
         logger.info(f"No Jira issue keys found for version '{version}', skipping test creation.")
         return
 
-    # Fetch existing test titles (case-insensitive matching)
+    # Fetch existing test titles BEFORE processing (ensures accurate duplicate check)
     existing_test_titles = get_existing_tests(engagement_id)
 
     for issue_key in jira_issue_keys:
@@ -145,6 +145,7 @@ def create_tests_in_defectdojo(engagement_id):
         response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", headers=HEADERS_DEFECTDOJO, json=payload)
         if response and response.status_code == 201:
             logger.info(f"✅ Created test '{issue_key}' in engagement {engagement_id} with version '{version}'")
+            existing_test_titles.add(test_title)  # Update set immediately after creation
         else:
             logger.error(f"❌ Failed to create test '{issue_key}'.")
 
@@ -171,13 +172,8 @@ def main():
     if not engagement_ids:
         return
 
-    processed_engagement_ids = set()
     for engagement_id in engagement_ids:
-        if engagement_id in processed_engagement_ids:
-            continue
-        
         create_tests_in_defectdojo(engagement_id)
-        processed_engagement_ids.add(engagement_id)
 
 if __name__ == "__main__":
     main()
