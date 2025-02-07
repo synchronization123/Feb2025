@@ -1,10 +1,8 @@
 import requests
 import time
 import logging
-from datetime import datetime, timedelta
 
 # Constants (replace with your actual values)
-DEFECTDOJO_TESTS_URL = 'https://demo.defectdojo.org/api/v2/tests/'
 DEFECTDOJO_ENGAGEMENTS_URL = 'https://demo.defectdojo.org/api/v2/engagements/'
 HEADERS_DEFECTDOJO = {
     'Authorization': 'Token 123232323232323',  # Replace with your API token
@@ -17,10 +15,6 @@ JIRA_HEADERS = {
     'Authorization': f'Bearer {JIRA_API_TOKEN}',
     'Content-Type': 'application/json'
 }
-
-HARDCODED_TEST_TYPE = 29  # Test type for Manual Code Review
-HARDCODED_SCAN_TYPE = "Manual Code Review"  # Scan type
-HARDCODED_ENVIRONMENT = 1  # Environment
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -71,20 +65,9 @@ def get_jira_issues(version):
     logger.info(f"Fetched {len(issue_keys)} unique Jira issue keys for version '{version}'.")
     return issue_keys
 
-# Function to fetch existing tests from DefectDojo
-def get_existing_tests(engagement_id):
-    """Fetch existing tests for an engagement, ensuring no duplicates."""
-    url = f"{DEFECTDOJO_TESTS_URL}?engagement={engagement_id}"
-    response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
-    if response is None:
-        return set()
-    
-    tests = response.json().get("results", [])
-    return {test["title"].strip().upper() for test in tests if test["title"]}  # Store in uppercase for matching
-
-# Function to fetch engagement details (including version)
+# Function to fetch engagement details (including version & description)
 def get_engagement_details(engagement_id):
-    """Fetch engagement details including the version."""
+    """Fetch engagement details including the version and description."""
     url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/"
     response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
     if response is None:
@@ -92,60 +75,48 @@ def get_engagement_details(engagement_id):
     
     return response.json()
 
-# Function to create tests in DefectDojo
-def create_tests_in_defectdojo(engagement_id, jira_issue_keys):
-    """Create tests for an engagement using Jira issue keys while preventing duplicates."""
+# Function to update engagement description with Jira keys (clearing previous data)
+def update_engagement_description(engagement_id, jira_keys):
+    """Clear existing engagement description and update it with new Jira keys."""
     engagement_details = get_engagement_details(engagement_id)
     if not engagement_details:
         logger.info(f"Skipping engagement {engagement_id}: No details found.")
         return
-    
-    status = engagement_details.get("status", "").lower()
-    if status == "completed":
-        logger.info(f"Skipping engagement {engagement_id}: Status 'completed'.")
-        return
 
-    lead = engagement_details.get("lead")
-    target_start = engagement_details.get("target_start") or datetime.now().strftime("%Y-%m-%d")
-    target_end = engagement_details.get("target_end") or (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-    version = engagement_details.get("version", "").strip()  # Fetch version from engagement
-
+    version = engagement_details.get("version", "").strip()
     if not version:
         logger.info(f"Skipping engagement {engagement_id}: No version found.")
         return
 
-    # Wait for 60 seconds before checking for existing tests
-    logger.info(f"Waiting for 60 seconds before checking existing tests for engagement {engagement_id}...")
-    time.sleep(60)
+    # Prepare new description with only Jira keys (clearing previous data)
+    updated_description = ", ".join(sorted(jira_keys))
 
-    # Fetch existing test titles AFTER delay
-    existing_test_titles = get_existing_tests(engagement_id)
+    # Update engagement description
+    update_payload = {"description": updated_description}
+    url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/"
+    response = request_with_retry(url, "PATCH", headers=HEADERS_DEFECTDOJO, json=update_payload)
 
-    for issue_key in jira_issue_keys:
-        test_title = issue_key.strip().upper()  # Store and check in uppercase to avoid case mismatches
+    if response and response.status_code == 200:
+        logger.info(f"✅ Updated engagement {engagement_id} description with {len(jira_keys)} Jira keys.")
+    else:
+        logger.error(f"❌ Failed to update engagement {engagement_id}.")
 
-        if test_title in existing_test_titles:
-            logger.info(f"Test '{test_title}' already exists in engagement {engagement_id}, skipping.")
-            continue
-        
-        payload = {
-            "engagement": engagement_id,
-            "title": issue_key,  # Keep original case for display
-            "description": "",
-            "test_type": HARDCODED_TEST_TYPE,
-            "scan_type": HARDCODED_SCAN_TYPE,
-            "environment": HARDCODED_ENVIRONMENT,
-            "lead": lead,
-            "target_start": target_start,
-            "target_end": target_end,
-            "version": version  # Use version from engagement
-        }
-        response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", headers=HEADERS_DEFECTDOJO, json=payload)
-        if response and response.status_code == 201:
-            logger.info(f"✅ Created test '{issue_key}' in engagement {engagement_id} with version '{version}'")
-            existing_test_titles.add(test_title)  # Update set immediately after creation
-        else:
-            logger.error(f"❌ Failed to create test '{issue_key}'.")
+# Function to fetch engagement IDs from DefectDojo (filtered by tag and status)
+def fetch_engagement_ids_from_defectdojo(tag="pci"):
+    """Fetch all engagement IDs with tag 'pci' and status 'Not Started' or 'In Progress'."""
+    engagement_ids = []
+    
+    for status in ["Not Started", "In Progress"]:
+        url = f"{DEFECTDOJO_ENGAGEMENTS_URL}?tags={tag}&status={status}"
+        response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
+        if response and response.status_code == 200:
+            engagements = response.json().get("results", [])
+            engagement_ids.extend([engagement["id"] for engagement in engagements])
+    
+    if not engagement_ids:
+        logger.warning("⚠️ No matching engagements found.")
+    
+    return engagement_ids
 
 # Main execution function
 def main():
@@ -153,15 +124,13 @@ def main():
     if not engagement_ids:
         return
 
-    # Fetch Jira issues once before processing engagements
-    if engagement_ids:
-        engagement_details = get_engagement_details(engagement_ids[0])
+    for engagement_id in engagement_ids:
+        engagement_details = get_engagement_details(engagement_id)
         if engagement_details:
             version = engagement_details.get("version", "").strip()
-            jira_issue_keys = get_jira_issues(version)
-
-            for engagement_id in engagement_ids:
-                create_tests_in_defectdojo(engagement_id, jira_issue_keys)
+            jira_keys = get_jira_issues(version)
+            if jira_keys:
+                update_engagement_description(engagement_id, jira_keys)
 
 if __name__ == "__main__":
     main()
