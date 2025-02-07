@@ -25,7 +25,7 @@ def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3
     for attempt in range(max_retries):
         try:
             response = requests.request(method, url, headers=headers, json=json)
-            if response.status_code in [200, 201]:
+            if response.status_code in [200, 201, 204]:  # 204 is for DELETE success
                 return response
             else:
                 log_message(f"❌ Error {response.status_code}: {response.text}")
@@ -145,10 +145,9 @@ def fetch_tests_for_engagement():
 
 # Function to delete selected tests
 def delete_selected_tests():
-    engagement_id = engagement_id_entry_tests.get().strip()
     selected_items = test_listbox.selection()
     
-    if not engagement_id or not selected_items:
+    if not selected_items:
         messagebox.showwarning("Missing Selection", "Please select at least one test to delete.")
         return
 
@@ -172,36 +171,25 @@ tab_control = ttk.Notebook(root)
 tab_create = ttk.Frame(tab_control)
 tab_control.add(tab_create, text="Create Tests")
 
-tk.Label(tab_create, text="Engagement ID:").pack(pady=5)
-engagement_id_entry = tk.Entry(tab_create, width=50)
-engagement_id_entry.pack(pady=5)
-
-tk.Label(tab_create, text="Description (JIRA Issues):").pack(pady=5)
-description_text = scrolledtext.ScrolledText(tab_create, width=60, height=10)
-description_text.pack(pady=5)
-
-create_button = tk.Button(tab_create, text="Create Tests", command=create_tests, bg="green", fg="white")
-create_button.pack(pady=10)
-
-log_text = scrolledtext.ScrolledText(tab_create, width=60, height=10)
-log_text.pack(pady=5)
-
 # Tab 2: Manage Tests
 tab_manage = ttk.Frame(tab_control)
 tab_control.add(tab_manage, text="Manage Tests")
 
-tk.Label(tab_manage, text="Engagement ID:").pack(pady=5)
+# Engagement ID Entry
 engagement_id_entry_tests = tk.Entry(tab_manage, width=50)
 engagement_id_entry_tests.pack(pady=5)
 
+# Fetch Button
 fetch_button = tk.Button(tab_manage, text="Fetch Tests", command=fetch_tests_for_engagement)
 fetch_button.pack(pady=5)
 
-test_listbox = ttk.Treeview(tab_manage, columns=("Title", "Test ID"), show="headings")
+# Test Listbox with Checkbox Selection
+test_listbox = ttk.Treeview(tab_manage, columns=("Title", "Test ID"), show="headings", selectmode="extended")
 test_listbox.heading("Title", text="Test Title")
 test_listbox.heading("Test ID", text="Test ID")
 test_listbox.pack(pady=5, fill="both", expand=True)
 
+# Delete Selected Button
 delete_button = tk.Button(tab_manage, text="Delete Selected", command=delete_selected_tests, bg="red", fg="white")
 delete_button.pack(pady=5)
 
