@@ -20,45 +20,61 @@ def log_message(message):
 
 # Function to handle requests with retries
 def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3, delay=2):
+    """Handles API requests with retries to prevent failures"""
     for attempt in range(max_retries):
         try:
-            if method == "GET":
-                response = requests.get(url, headers=headers)
-            elif method == "POST":
-                response = requests.post(url, headers=headers, json=json)
-            
+            response = requests.request(method, url, headers=headers, json=json)
             if response.status_code in [200, 201]:
                 return response
             else:
-                log_message(f"❌ Error: {response.status_code} - {response.text}")
+                log_message(f"❌ Error {response.status_code}: {response.text}")
                 break  # Stop retrying if response is a clear failure
-
         except requests.exceptions.RequestException as e:
-            log_message(f"❌ Network error: {str(e)}. Retrying in {delay} seconds...")
-            time.sleep(delay)  # Wait before retrying
+            log_message(f"❌ Network error: {str(e)}. Retrying in {delay} sec...")
+            time.sleep(delay)
     return None
+
+# Function to fetch ALL existing tests for an engagement (Handles Pagination)
+def get_existing_tests(engagement_id):
+    """Fetches all existing test titles for an engagement to prevent duplicate test creation."""
+    existing_tests = set()
+    url = f"{DEFECTDOJO_TESTS_URL}?engagement={engagement_id}&limit=100"  # Fetch 100 tests per page
+
+    while url:
+        response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
+        if not response:
+            break
+
+        data = response.json()
+        results = data.get("results", [])
+
+        # Store test titles in lowercase for strict comparison
+        for test in results:
+            test_title = test.get("title", "").strip().lower()
+            if test_title:
+                existing_tests.add(test_title)
+
+        # Get next page if available
+        url = data.get("next")  # DefectDojo provides pagination
+
+    return existing_tests
+
+# Function to extract JIRA issue keys from description
+def get_jira_issue_keys_from_description(description):
+    """Extracts JIRA issue keys (e.g., PE-454554, CRM-565656) from the engagement description"""
+    pattern = r'\b[a-zA-Z]+-\d+\b'
+    return list(set([key.upper() for key in re.findall(pattern, description)]))
 
 # Function to fetch engagement details
 def get_engagement_details(engagement_id):
+    """Fetches details of an engagement"""
     url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/"
     response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
     return response.json() if response else None
 
-# Function to fetch existing tests for an engagement to prevent duplicates
-def get_existing_tests(engagement_id):
-    url = f"{DEFECTDOJO_TESTS_URL}?engagement={engagement_id}"
-    response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
-    if response:
-        return {test["title"].strip().lower() for test in response.json().get("results", [])}
-    return set()
-
-# Function to extract JIRA issue keys from description
-def get_jira_issue_keys_from_description(description):
-    pattern = r'\b[a-zA-Z]+-\d+\b'
-    return list(set([key.upper() for key in re.findall(pattern, description)]))
-
 # Function to create tests dynamically
 def create_tests():
+    """Creates tests dynamically in DefectDojo while preventing duplicates"""
     engagement_id = engagement_id_entry.get().strip()
     description = description_text.get("1.0", tk.END).strip()
 
@@ -71,29 +87,37 @@ def create_tests():
         log_message(f"❌ Failed to fetch details for engagement {engagement_id}.")
         return
 
+    # Skip completed engagements
     if engagement_details.get("status", "").lower() == "completed":
         log_message(f"⚠️ Engagement {engagement_id} is completed. Skipping test creation.")
         return
 
+    # Extract JIRA issues from the description
     issue_keys = get_jira_issue_keys_from_description(description)
     if not issue_keys:
         log_message(f"⚠️ No valid JIRA issues found for engagement {engagement_id}. Skipping.")
         return
 
+    # Fetch existing tests for this engagement (Handles pagination)
     existing_tests = get_existing_tests(engagement_id)
+
+    # Fetch required fields dynamically
     lead = engagement_details.get("lead", 1)
     target_start = engagement_details.get("target_start", datetime.now().strftime("%Y-%m-%d"))
     target_end = engagement_details.get("target_end", (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"))
 
     for issue_key in issue_keys:
-        test_title = f"{issue_key}"
-        if test_title.lower() in existing_tests:
-            log_message(f"⚠️ Test '{test_title}' already exists for engagement {engagement_id}. Skipping.")
+        test_title = issue_key.strip().lower()  # Normalize casing
+
+        # Prevent duplicate test creation
+        if test_title in existing_tests:
+            log_message(f"⚠️ Test '{issue_key}' already exists for engagement {engagement_id}. Skipping.")
             continue
 
+        # Proceed with test creation
         payload = {
             "engagement": engagement_id,
-            "title": test_title,
+            "title": issue_key,  # Keep original title case
             "description": "",
             "test_type": engagement_details.get("test_type"),
             "scan_type": engagement_details.get("scan_type", "Unknown"),
@@ -102,11 +126,13 @@ def create_tests():
             "target_start": target_start,
             "target_end": target_end
         }
+
         response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", headers=HEADERS_DEFECTDOJO, json=payload)
+
         if response and response.status_code == 201:
-            log_message(f"✅ Successfully created test '{test_title}' for engagement {engagement_id}")
+            log_message(f"✅ Successfully created test '{issue_key}' for engagement {engagement_id}")
         else:
-            log_message(f"❌ Failed to create test '{test_title}'.")
+            log_message(f"❌ Failed to create test '{issue_key}'.")
 
 # GUI Setup
 root = tk.Tk()
