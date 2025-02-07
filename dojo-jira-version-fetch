@@ -77,6 +77,7 @@ def get_jira_issues(version):
 
 # Function to fetch existing tests from DefectDojo
 def get_existing_tests(engagement_id):
+    """Fetch existing tests for an engagement, ensuring no duplicates."""
     url = f"{DEFECTDOJO_TESTS_URL}?engagement={engagement_id}"
     response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
     if response is None:
@@ -87,6 +88,7 @@ def get_existing_tests(engagement_id):
 
 # Function to fetch engagement details (including version)
 def get_engagement_details(engagement_id):
+    """Fetch engagement details including the version."""
     url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/"
     response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
     if response is None:
@@ -96,6 +98,7 @@ def get_engagement_details(engagement_id):
 
 # Function to create tests in DefectDojo
 def create_tests_in_defectdojo(engagement_id):
+    """Create tests for an engagement using Jira issue keys while preventing duplicates."""
     engagement_details = get_engagement_details(engagement_id)
     if not engagement_details:
         logger.info(f"Skipping engagement {engagement_id}: No details found.")
@@ -121,19 +124,19 @@ def create_tests_in_defectdojo(engagement_id):
         logger.info(f"No Jira issue keys found for version '{version}', skipping test creation.")
         return
 
-    # Fetch existing test titles
+    # Fetch existing test titles (case-insensitive matching)
     existing_test_titles = get_existing_tests(engagement_id)
 
     for issue_key in jira_issue_keys:
-        test_title = issue_key  # Title contains only the Jira key
+        test_title = issue_key.strip().lower()  # Title contains only the Jira key, case-insensitive check
 
-        if test_title.lower() in existing_test_titles:
+        if test_title in existing_test_titles:
             logger.info(f"Test '{test_title}' already exists in engagement {engagement_id}, skipping.")
             continue
         
         payload = {
             "engagement": engagement_id,
-            "title": test_title,
+            "title": issue_key,  # Keep original case for display
             "description": "",
             "test_type": HARDCODED_TEST_TYPE,
             "scan_type": HARDCODED_SCAN_TYPE,
@@ -145,12 +148,13 @@ def create_tests_in_defectdojo(engagement_id):
         }
         response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", headers=HEADERS_DEFECTDOJO, json=payload)
         if response and response.status_code == 201:
-            logger.info(f"✅ Created test '{test_title}' in engagement {engagement_id} with version '{version}'")
+            logger.info(f"✅ Created test '{issue_key}' in engagement {engagement_id} with version '{version}'")
         else:
-            logger.error(f"❌ Failed to create test '{test_title}'.")
+            logger.error(f"❌ Failed to create test '{issue_key}'.")
 
 # Function to fetch engagement IDs from DefectDojo
 def fetch_engagement_ids_from_defectdojo(tags_filter="pci"):
+    """Fetch all engagement IDs with a specific tag and status."""
     engagement_ids = []
     
     for status in ["Not Started", "In Progress"]:
