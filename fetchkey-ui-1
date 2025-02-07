@@ -21,11 +21,10 @@ def log_message(message):
 
 # Function to handle API requests with retries
 def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3, delay=2):
-    """Handles API requests with retries to prevent failures"""
     for attempt in range(max_retries):
         try:
             response = requests.request(method, url, headers=headers, json=json)
-            if response.status_code in [200, 201, 204]:  # 204 is for DELETE success
+            if response.status_code in [200, 201, 204]:
                 return response
             else:
                 log_message(f"❌ Error {response.status_code}: {response.text}")
@@ -46,9 +45,7 @@ def get_existing_tests(engagement_id):
             break
 
         data = response.json()
-        results = data.get("results", [])
-
-        for test in results:
+        for test in data.get("results", []):
             test_id = test.get("id")
             test_title = test.get("title", "").strip()
             if test_title and test_id:
@@ -95,25 +92,20 @@ def create_tests():
     existing_tests = get_existing_tests(engagement_id)
     created_tests = []
 
-    lead = engagement_details.get("lead", 1)
-    target_start = engagement_details.get("target_start", datetime.now().strftime("%Y-%m-%d"))
-    target_end = engagement_details.get("target_end", (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"))
-
     for issue_key in issue_keys:
         if issue_key.lower() in existing_tests:
-            log_message(f"⚠️ Test '{issue_key}' already exists for engagement {engagement_id}. Skipping.")
+            log_message(f"⚠️ Test '{issue_key}' already exists. Skipping.")
             continue
 
         payload = {
             "engagement": engagement_id,
             "title": issue_key,
-            "description": "",
             "test_type": engagement_details.get("test_type"),
             "scan_type": engagement_details.get("scan_type", "Unknown"),
             "environment": engagement_details.get("environment", 1),
-            "lead": lead,
-            "target_start": target_start,
-            "target_end": target_end
+            "lead": engagement_details.get("lead", 1),
+            "target_start": engagement_details.get("target_start", datetime.now().strftime("%Y-%m-%d")),
+            "target_end": engagement_details.get("target_end", (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"))
         }
 
         response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", headers=HEADERS_DEFECTDOJO, json=payload)
@@ -137,17 +129,29 @@ def fetch_tests_for_engagement():
         messagebox.showwarning("Missing Input", "Please enter an Engagement ID.")
         return
 
-    test_listbox.delete(*test_listbox.get_children())  # Clear previous results
-    existing_tests = get_existing_tests(engagement_id)
+    for i in test_listbox.get_children():
+        test_listbox.delete(i)
 
+    existing_tests = get_existing_tests(engagement_id)
     for title, test_id in existing_tests.items():
         test_listbox.insert("", "end", values=(title, test_id))
 
+# Function to copy selected test details
+def copy_selected_tests(event=None):
+    selected_items = test_listbox.selection()
+    if selected_items:
+        copied_text = "\n".join([f"{test_listbox.item(item, 'values')[0]} - {test_listbox.item(item, 'values')[1]}" for item in selected_items])
+        root.clipboard_clear()
+        root.clipboard_append(copied_text)
+        root.update()
+        log_message("📋 Copied to clipboard.")
+
 # Function to delete selected tests
 def delete_selected_tests():
+    engagement_id = engagement_id_entry_tests.get().strip()
     selected_items = test_listbox.selection()
     
-    if not selected_items:
+    if not engagement_id or not selected_items:
         messagebox.showwarning("Missing Selection", "Please select at least one test to delete.")
         return
 
@@ -158,7 +162,7 @@ def delete_selected_tests():
         
         if response and response.status_code == 204:
             log_message(f"✅ Deleted test ID {test_id}.")
-            test_listbox.delete(item)  # Remove from UI
+            test_listbox.delete(item)
 
 # GUI Setup with Tabs
 root = tk.Tk()
@@ -175,23 +179,23 @@ tab_control.add(tab_create, text="Create Tests")
 tab_manage = ttk.Frame(tab_control)
 tab_control.add(tab_manage, text="Manage Tests")
 
-# Engagement ID Entry
+# Engagement ID for managing tests
+tk.Label(tab_manage, text="Engagement ID:").pack(pady=5)
 engagement_id_entry_tests = tk.Entry(tab_manage, width=50)
 engagement_id_entry_tests.pack(pady=5)
 
-# Fetch Button
 fetch_button = tk.Button(tab_manage, text="Fetch Tests", command=fetch_tests_for_engagement)
 fetch_button.pack(pady=5)
 
-# Test Listbox with Checkbox Selection
-test_listbox = ttk.Treeview(tab_manage, columns=("Title", "Test ID"), show="headings", selectmode="extended")
+test_listbox = ttk.Treeview(tab_manage, columns=("Title", "Test ID"), show="headings")
 test_listbox.heading("Title", text="Test Title")
 test_listbox.heading("Test ID", text="Test ID")
 test_listbox.pack(pady=5, fill="both", expand=True)
 
-# Delete Selected Button
 delete_button = tk.Button(tab_manage, text="Delete Selected", command=delete_selected_tests, bg="red", fg="white")
 delete_button.pack(pady=5)
 
 tab_control.pack(expand=1, fill="both")
+root.bind("<Control-c>", copy_selected_tests)
+
 root.mainloop()
