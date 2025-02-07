@@ -147,23 +147,6 @@ def create_tests_in_defectdojo(engagement_id, jira_issue_keys):
         else:
             logger.error(f"❌ Failed to create test '{issue_key}'.")
 
-# Function to fetch engagement IDs from DefectDojo
-def fetch_engagement_ids_from_defectdojo(tags_filter="pci"):
-    """Fetch all engagement IDs with a specific tag and status."""
-    engagement_ids = []
-    
-    for status in ["Not Started", "In Progress"]:
-        url = f"{DEFECTDOJO_ENGAGEMENTS_URL}?tags={tags_filter}&status={status}"
-        response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
-        if response and response.status_code == 200:
-            engagements = response.json().get("results", [])
-            engagement_ids.extend([engagement["id"] for engagement in engagements])
-    
-    if not engagement_ids:
-        logger.warning("⚠️ No engagements found.")
-    
-    return engagement_ids
-
 # Main execution function
 def main():
     engagement_ids = fetch_engagement_ids_from_defectdojo()
