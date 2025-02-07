@@ -1,26 +1,64 @@
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import requests
+import re
+import time
+from datetime import datetime, timedelta
 
 # API Details
-DEFECTDOJO_ENGAGEMENTS_URL = "https://demo.defectdojo.org/api/v2/engagements/"
-API_TOKEN = "548afd6fab3bea9794a41b31da0e9404f733e222"
+DEFECTDOJO_TESTS_URL = 'https://demo.defectdojo.org/api/v2/tests/'
+DEFECTDOJO_ENGAGEMENTS_URL = 'https://demo.defectdojo.org/api/v2/engagements/'
 HEADERS_DEFECTDOJO = {
-    'Authorization': f'Token {API_TOKEN}',
+    'Authorization': 'Token 123232323232323',  # Replace with your API token
     'Content-Type': 'application/json'
 }
+
+# Function to log messages inside the GUI
+def log_message(message):
+    log_text.insert(tk.END, message + "\n")
+    log_text.see(tk.END)
+
+# Function to handle requests with retries
+def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3, delay=2):
+    for attempt in range(max_retries):
+        try:
+            if method == "GET":
+                response = requests.get(url, headers=headers)
+            elif method == "POST":
+                response = requests.post(url, headers=headers, json=json)
+            
+            if response.status_code in [200, 201]:
+                return response
+            else:
+                log_message(f"❌ Error: {response.status_code} - {response.text}")
+                break  # Stop retrying if response is a clear failure
+
+        except requests.exceptions.RequestException as e:
+            log_message(f"❌ Network error: {str(e)}. Retrying in {delay} seconds...")
+            time.sleep(delay)  # Wait before retrying
+    return None
 
 # Function to fetch engagement details
 def get_engagement_details(engagement_id):
     url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/"
-    response = requests.get(url, headers=HEADERS_DEFECTDOJO)
-    if response.status_code != 200:
-        log_message(f"❌ Error fetching engagement {engagement_id}: {response.text}")
-        return None
-    return response.json()
+    response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
+    return response.json() if response else None
 
-# Function to create a test in DefectDojo dynamically
-def create_test():
+# Function to fetch existing tests for an engagement to prevent duplicates
+def get_existing_tests(engagement_id):
+    url = f"{DEFECTDOJO_TESTS_URL}?engagement={engagement_id}"
+    response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
+    if response:
+        return {test["title"].strip().lower() for test in response.json().get("results", [])}
+    return set()
+
+# Function to extract JIRA issue keys from description
+def get_jira_issue_keys_from_description(description):
+    pattern = r'\b[a-zA-Z]+-\d+\b'
+    return list(set([key.upper() for key in re.findall(pattern, description)]))
+
+# Function to create tests dynamically
+def create_tests():
     engagement_id = engagement_id_entry.get().strip()
     description = description_text.get("1.0", tk.END).strip()
 
@@ -28,60 +66,66 @@ def create_test():
         messagebox.showwarning("Missing Input", "Please enter Engagement ID and Description.")
         return
 
-    # Fetch engagement details dynamically
-    engagement_data = get_engagement_details(engagement_id)
-    if not engagement_data:
+    engagement_details = get_engagement_details(engagement_id)
+    if not engagement_details:
+        log_message(f"❌ Failed to fetch details for engagement {engagement_id}.")
         return
 
-    # Prepare test data dynamically based on engagement details
-    test_data = {
-        "engagement": int(engagement_id),
-        "scan_type": engagement_data.get("scan_type", "Unknown"),  # Dynamically fetch scan type
-        "test_type": engagement_data.get("test_type"),  # Fetch actual test type ID if available
-        "title": engagement_data.get("name", f"Test for Engagement {engagement_id}"),
-        "description": description,  # User inputted description
-        "target_start": engagement_data.get("target_start"),
-        "target_end": engagement_data.get("target_end"),
-        "lead": engagement_data.get("lead"),
-        "environment": engagement_data.get("environment")
-    }
+    if engagement_details.get("status", "").lower() == "completed":
+        log_message(f"⚠️ Engagement {engagement_id} is completed. Skipping test creation.")
+        return
 
-    create_test_url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/tests/"
-    response = requests.post(create_test_url, json=test_data, headers=HEADERS_DEFECTDOJO)
+    issue_keys = get_jira_issue_keys_from_description(description)
+    if not issue_keys:
+        log_message(f"⚠️ No valid JIRA issues found for engagement {engagement_id}. Skipping.")
+        return
 
-    if response.status_code == 201:
-        log_message(f"✅ Test created successfully for Engagement {engagement_id}")
-    else:
-        log_message(f"❌ Failed to create test: {response.text}")
+    existing_tests = get_existing_tests(engagement_id)
+    lead = engagement_details.get("lead", 1)
+    target_start = engagement_details.get("target_start", datetime.now().strftime("%Y-%m-%d"))
+    target_end = engagement_details.get("target_end", (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"))
 
-# Function to log messages
-def log_message(message):
-    log_text.insert(tk.END, message + "\n")
-    log_text.see(tk.END)
+    for issue_key in issue_keys:
+        test_title = f"{issue_key}"
+        if test_title.lower() in existing_tests:
+            log_message(f"⚠️ Test '{test_title}' already exists for engagement {engagement_id}. Skipping.")
+            continue
+
+        payload = {
+            "engagement": engagement_id,
+            "title": test_title,
+            "description": "",
+            "test_type": engagement_details.get("test_type"),
+            "scan_type": engagement_details.get("scan_type", "Unknown"),
+            "environment": engagement_details.get("environment", 1),
+            "lead": lead,
+            "target_start": target_start,
+            "target_end": target_end
+        }
+        response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", headers=HEADERS_DEFECTDOJO, json=payload)
+        if response and response.status_code == 201:
+            log_message(f"✅ Successfully created test '{test_title}' for engagement {engagement_id}")
+        else:
+            log_message(f"❌ Failed to create test '{test_title}'.")
 
 # GUI Setup
 root = tk.Tk()
 root.title("DefectDojo Test Creator")
 root.geometry("600x600")
 
-# Label and Input for Engagement ID
 tk.Label(root, text="Engagement ID:").pack(pady=5)
 engagement_id_entry = tk.Entry(root, width=50)
 engagement_id_entry.pack(pady=5)
 
-# Label and Text Area for Description
 tk.Label(root, text="Description (JIRA Issues):").pack(pady=5)
 description_text = scrolledtext.ScrolledText(root, width=60, height=10)
 description_text.pack(pady=5)
 
-# Create Test Button
-create_button = tk.Button(root, text="Create Test", command=create_test, bg="green", fg="white")
+create_button = tk.Button(root, text="Create Tests", command=create_tests, bg="green", fg="white")
 create_button.pack(pady=10)
 
-# Log Area
 tk.Label(root, text="Logs:").pack(pady=5)
 log_text = scrolledtext.ScrolledText(root, width=60, height=10)
 log_text.pack(pady=5)
 
-# Run GUI
 root.mainloop()
