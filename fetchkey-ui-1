@@ -20,10 +20,10 @@ def log_message(message):
     log_text.see(tk.END)
 
 # Function to handle API requests with retries
-def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3, delay=2):
+def request_with_retry(url, method="GET", json=None, max_retries=3, delay=2):
     for attempt in range(max_retries):
         try:
-            response = requests.request(method, url, headers=headers, json=json)
+            response = requests.request(method, url, headers=HEADERS_DEFECTDOJO, json=json)
             if response.status_code in [200, 201, 204]:
                 return response
             else:
@@ -34,39 +34,39 @@ def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3
             time.sleep(delay)
     return None
 
-# Function to fetch all existing tests for an engagement
+# Fetch existing tests (Handles Pagination)
 def get_existing_tests(engagement_id):
     existing_tests = {}
     url = f"{DEFECTDOJO_TESTS_URL}?engagement={engagement_id}&limit=100"
 
     while url:
-        response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
+        response = request_with_retry(url)
         if not response:
             break
 
         data = response.json()
         for test in data.get("results", []):
+            test_title = test.get("title", "").strip().lower()
             test_id = test.get("id")
-            test_title = test.get("title", "").strip()
             if test_title and test_id:
-                existing_tests[test_title.lower()] = test_id
+                existing_tests[test_title] = test_id
 
-        url = data.get("next")  # Handle pagination
+        url = data.get("next")  # Pagination
 
     return existing_tests
 
-# Function to extract JIRA issue keys
+# Extract JIRA IDs from description
 def get_jira_issue_keys_from_description(description):
     pattern = r'\b[a-zA-Z]+-\d+\b'
     return list(set([key.upper() for key in re.findall(pattern, description)]))
 
-# Function to fetch engagement details
+# Fetch engagement details
 def get_engagement_details(engagement_id):
     url = f"{DEFECTDOJO_ENGAGEMENTS_URL}{engagement_id}/"
-    response = request_with_retry(url, "GET", headers=HEADERS_DEFECTDOJO)
+    response = request_with_retry(url)
     return response.json() if response else None
 
-# Function to create tests dynamically and export to Excel
+# Function to create tests
 def create_tests():
     engagement_id = engagement_id_entry.get().strip()
     description = description_text.get("1.0", tk.END).strip()
@@ -100,102 +100,100 @@ def create_tests():
         payload = {
             "engagement": engagement_id,
             "title": issue_key,
+            "description": "",
             "test_type": engagement_details.get("test_type"),
             "scan_type": engagement_details.get("scan_type", "Unknown"),
             "environment": engagement_details.get("environment", 1),
             "lead": engagement_details.get("lead", 1),
             "target_start": engagement_details.get("target_start", datetime.now().strftime("%Y-%m-%d")),
-            "target_end": engagement_details.get("target_end", (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"))
+            "target_end": engagement_details.get("target_end", (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")),
         }
 
-        response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", headers=HEADERS_DEFECTDOJO, json=payload)
+        response = request_with_retry(DEFECTDOJO_TESTS_URL, "POST", json=payload)
 
         if response and response.status_code == 201:
             test_id = response.json().get("id")
+            log_message(f"✅ Created Test '{issue_key}' (ID: {test_id})")
             created_tests.append((issue_key, test_id))
-            log_message(f"✅ Created test '{issue_key}' with ID {test_id}.")
 
     if created_tests:
-        df = pd.DataFrame(created_tests, columns=["JIRA Issue", "Test ID"])
-        file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
-        if file_path:
-            df.to_excel(file_path, index=False)
-            log_message(f"📂 Tests saved to {file_path}")
+        save_to_excel(created_tests)
 
-# Function to fetch & display existing tests with checkboxes
-def fetch_tests_for_engagement():
-    engagement_id = engagement_id_entry_tests.get().strip()
+# Save created tests to Excel
+def save_to_excel(data):
+    df = pd.DataFrame(data, columns=["JIRA ID", "Test ID"])
+    file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Files", "*.xlsx")])
+    if file_path:
+        df.to_excel(file_path, index=False)
+        log_message(f"📂 Saved test data to {file_path}")
+
+# Fetch and display existing tests in Manage Tests tab
+def fetch_tests():
+    engagement_id = manage_engagement_entry.get().strip()
     if not engagement_id:
-        messagebox.showwarning("Missing Input", "Please enter an Engagement ID.")
+        messagebox.showwarning("Missing Input", "Enter Engagement ID.")
         return
 
-    for i in test_listbox.get_children():
-        test_listbox.delete(i)
+    tests = get_existing_tests(engagement_id)
+    test_list.delete(*test_list.get_children())
 
-    existing_tests = get_existing_tests(engagement_id)
-    for title, test_id in existing_tests.items():
-        test_listbox.insert("", "end", values=(title, test_id))
+    for test_title, test_id in tests.items():
+        test_list.insert("", "end", values=(test_id, test_title))
 
-# Function to copy selected test details
-def copy_selected_tests(event=None):
-    selected_items = test_listbox.selection()
-    if selected_items:
-        copied_text = "\n".join([f"{test_listbox.item(item, 'values')[0]} - {test_listbox.item(item, 'values')[1]}" for item in selected_items])
-        root.clipboard_clear()
-        root.clipboard_append(copied_text)
-        root.update()
-        log_message("📋 Copied to clipboard.")
-
-# Function to delete selected tests
-def delete_selected_tests():
-    engagement_id = engagement_id_entry_tests.get().strip()
-    selected_items = test_listbox.selection()
-    
-    if not engagement_id or not selected_items:
-        messagebox.showwarning("Missing Selection", "Please select at least one test to delete.")
+# Delete selected or all tests
+def delete_tests():
+    selected_items = test_list.selection()
+    if not selected_items:
+        messagebox.showwarning("No Selection", "Select tests to delete.")
         return
 
     for item in selected_items:
-        test_id = test_listbox.item(item, "values")[1]
+        test_id = test_list.item(item, "values")[0]
         url = f"{DEFECTDOJO_TESTS_URL}{test_id}/"
-        response = request_with_retry(url, "DELETE", headers=HEADERS_DEFECTDOJO)
-        
-        if response and response.status_code == 204:
-            log_message(f"✅ Deleted test ID {test_id}.")
-            test_listbox.delete(item)
+        response = request_with_retry(url, method="DELETE")
 
-# GUI Setup with Tabs
+        if response and response.status_code == 204:
+            log_message(f"🗑️ Deleted Test ID {test_id}")
+            test_list.delete(item)
+
+# GUI Setup
 root = tk.Tk()
 root.title("DefectDojo Test Manager")
-root.geometry("700x600")
+root.geometry("800x600")
 
-tab_control = ttk.Notebook(root)
+notebook = ttk.Notebook(root)
+tab_create = ttk.Frame(notebook)
+tab_manage = ttk.Frame(notebook)
 
-# Tab 1: Create Tests
-tab_create = ttk.Frame(tab_control)
-tab_control.add(tab_create, text="Create Tests")
+notebook.add(tab_create, text="Create Tests")
+notebook.add(tab_manage, text="Manage Tests")
+notebook.pack(expand=True, fill="both")
 
-# Tab 2: Manage Tests
-tab_manage = ttk.Frame(tab_control)
-tab_control.add(tab_manage, text="Manage Tests")
+# Create Tests Tab
+ttk.Label(tab_create, text="Engagement ID:").pack()
+engagement_id_entry = ttk.Entry(tab_create, width=50)
+engagement_id_entry.pack()
 
-# Engagement ID for managing tests
-tk.Label(tab_manage, text="Engagement ID:").pack(pady=5)
-engagement_id_entry_tests = tk.Entry(tab_manage, width=50)
-engagement_id_entry_tests.pack(pady=5)
+ttk.Label(tab_create, text="Description (JIRA Issues):").pack()
+description_text = scrolledtext.ScrolledText(tab_create, width=60, height=10)
+description_text.pack()
 
-fetch_button = tk.Button(tab_manage, text="Fetch Tests", command=fetch_tests_for_engagement)
-fetch_button.pack(pady=5)
+ttk.Button(tab_create, text="Create Tests", command=create_tests).pack()
 
-test_listbox = ttk.Treeview(tab_manage, columns=("Title", "Test ID"), show="headings")
-test_listbox.heading("Title", text="Test Title")
-test_listbox.heading("Test ID", text="Test ID")
-test_listbox.pack(pady=5, fill="both", expand=True)
+log_text = scrolledtext.ScrolledText(tab_create, width=60, height=10)
+log_text.pack()
 
-delete_button = tk.Button(tab_manage, text="Delete Selected", command=delete_selected_tests, bg="red", fg="white")
-delete_button.pack(pady=5)
+# Manage Tests Tab
+ttk.Label(tab_manage, text="Engagement ID:").pack()
+manage_engagement_entry = ttk.Entry(tab_manage, width=50)
+manage_engagement_entry.pack()
 
-tab_control.pack(expand=1, fill="both")
-root.bind("<Control-c>", copy_selected_tests)
+ttk.Button(tab_manage, text="Fetch Tests", command=fetch_tests).pack()
+test_list = ttk.Treeview(tab_manage, columns=("ID", "Title"), show="headings")
+test_list.heading("ID", text="Test ID")
+test_list.heading("Title", text="Test Title")
+test_list.pack()
+
+ttk.Button(tab_manage, text="Delete Selected", command=delete_tests).pack()
 
 root.mainloop()
