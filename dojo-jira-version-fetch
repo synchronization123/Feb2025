@@ -1,7 +1,6 @@
 import requests
 import time
 import logging
-import re
 from datetime import datetime, timedelta
 
 # Constants (replace with your actual values)
@@ -31,9 +30,6 @@ logger = logging.getLogger()
 def request_with_retry(url, method="GET", headers=None, json=None, max_retries=3, delay=2):
     for attempt in range(max_retries):
         try:
-            sanitized_headers = {k: (v if k != 'Authorization' else 'Token <REDACTED>') for k, v in headers.items()}
-            logger.debug(f"Making {method} request to {url} with headers: {sanitized_headers}")
-            
             response = requests.request(method, url, headers=headers, json=json)
             if response.status_code in [200, 201]:
                 return response
@@ -54,7 +50,7 @@ def get_jira_issues(version):
         return []
 
     jql_query = f'labels in ("{version}") OR "Build(s)" in ("{version}")'
-    issue_keys = []
+    issue_keys = set()
     start_at = 0
     max_results = 50  # Jira returns 50 issues per request by default
 
@@ -69,10 +65,10 @@ def get_jira_issues(version):
         if not issues:
             break
 
-        issue_keys.extend([issue["key"] for issue in issues])
+        issue_keys.update(issue["key"].upper() for issue in issues)  # Convert to uppercase to avoid case issues
         start_at += max_results  # Move to next page
 
-    logger.info(f"Fetched {len(issue_keys)} Jira issue keys for version '{version}'.")
+    logger.info(f"Fetched {len(issue_keys)} unique Jira issue keys for version '{version}'.")
     return issue_keys
 
 # Function to fetch existing tests from DefectDojo
@@ -84,7 +80,7 @@ def get_existing_tests(engagement_id):
         return set()
     
     tests = response.json().get("results", [])
-    return {test["title"].strip().lower() for test in tests if test["title"]}
+    return {test["title"].strip().upper() for test in tests if test["title"]}  # Store in uppercase for matching
 
 # Function to fetch engagement details (including version)
 def get_engagement_details(engagement_id):
@@ -128,7 +124,7 @@ def create_tests_in_defectdojo(engagement_id):
     existing_test_titles = get_existing_tests(engagement_id)
 
     for issue_key in jira_issue_keys:
-        test_title = issue_key.strip().lower()  # Title contains only the Jira key, case-insensitive check
+        test_title = issue_key.strip().upper()  # Store and check in uppercase to avoid case mismatches
 
         if test_title in existing_test_titles:
             logger.info(f"Test '{test_title}' already exists in engagement {engagement_id}, skipping.")
