@@ -1,0 +1,244 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext
+import requests
+import re
+import openpyxl
+
+# Constants for API
+DEFECTDOJO_URL = "https://demo.defectdojo.org/api/v2"
+HEADERS = {"Authorization": "Token 548afd6fab3bea9794a41b31da0e9404f733e222"}
+
+# Create the main window
+root = tk.Tk()
+root.title("APPSEC Dashboard")
+root.geometry("1200x800")
+
+# Create a Notebook (tab structure)
+notebook = ttk.Notebook(root)
+notebook.pack(fill=tk.BOTH, expand=True)
+
+### **Tab 1: Engagements**
+def create_engagement_tab():
+    engagement_frame = ttk.Frame(notebook)
+    notebook.add(engagement_frame, text="Engagements")
+
+    tree = ttk.Treeview(engagement_frame, columns=("ID", "Name", "Status", "Lead", "Product"), show="headings")
+    tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+    for col in ("ID", "Name", "Status", "Lead", "Product"):
+        tree.heading(col, text=col)
+        tree.column(col, anchor="center")
+
+    def fetch_engagements():
+        try:
+            response = requests.get(f"{DEFECTDOJO_URL}/engagements/", headers=HEADERS)
+            if response.status_code == 200:
+                return response.json().get("results", [])
+        except Exception as e:
+            print("Exception:", e)
+        return []
+
+    def display_engagements():
+        engagements = fetch_engagements()
+        for row in tree.get_children():
+            tree.delete(row)
+        for eng in engagements:
+            tree.insert("", tk.END, values=(eng["id"], eng["name"], eng["status"], eng["lead"], eng["product"]))
+
+    display_engagements()
+
+### **Tab 2: Tests**
+def create_tests_tab():
+    tests_frame = ttk.Frame(notebook)
+    notebook.add(tests_frame, text="Tests")
+
+    tree = ttk.Treeview(tests_frame, columns=("ID", "Title", "Version", "Created", "Status"), show="headings")
+    tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+    for col in ("ID", "Title", "Version", "Created", "Status"):
+        tree.heading(col, text=col)
+        tree.column(col, anchor="center")
+
+    def fetch_tests():
+        try:
+            response = requests.get(f"{DEFECTDOJO_URL}/tests/", headers=HEADERS)
+            if response.status_code == 200:
+                return response.json().get("results", [])
+        except Exception as e:
+            print("Exception fetching tests:", e)
+        return []
+
+    def display_tests():
+        tests = fetch_tests()
+        for row in tree.get_children():
+            tree.delete(row)
+        for test in tests:
+            tree.insert("", tk.END, values=(test["id"], test["title"], test["version"], test["created"], test["branch_tag"]))
+
+    display_tests()
+
+
+### **Tab 3: Jira ID Extractor**
+class JiraExtractorApp:
+    def __init__(self, root_window, tab_frame):
+        self.root = root_window
+        self.tab_frame = tab_frame
+
+        self.engagement_label = tk.Label(self.tab_frame, text="Select Engagement for Test Creation:")
+        self.engagement_label.pack()
+        self.engagement_dropdown = ttk.Combobox(self.tab_frame, state="readonly")
+        self.engagement_dropdown.pack()
+        self.fetch_engagements()
+
+        self.label = tk.Label(self.tab_frame, text="Paste or Import JIRA IDs Below:")
+        self.label.pack()
+        self.textarea = scrolledtext.ScrolledText(self.tab_frame, height=8)
+        self.textarea.pack(fill=tk.BOTH, expand=True)
+
+        self.import_button = tk.Button(self.tab_frame, text="Import .txt", command=self.import_file)
+        self.import_button.pack(pady=5)
+        self.filter_button = tk.Button(self.tab_frame, text="Filter JIRA IDs", command=self.filter_jira_ids)
+        self.filter_button.pack(pady=5)
+        self.export_button = tk.Button(self.tab_frame, text="Export to Excel", command=self.export_to_excel)
+        self.export_button.pack(pady=5)
+
+        self.create_tests_button = tk.Button(self.tab_frame, text="Create Tests", command=self.create_tests, state="disabled")
+        self.create_tests_button.pack(pady=5)
+
+        self.filtered_textarea = scrolledtext.ScrolledText(self.tab_frame, height=5, state="disabled")
+        self.filtered_textarea.pack(fill=tk.BOTH, expand=True)
+
+    def fetch_engagements(self):
+        """Fetch all engagements and populate the dropdown."""
+        try:
+            response = requests.get(f"{DEFECTDOJO_URL}/engagements/", headers=HEADERS)
+            if response.status_code == 200:
+                engagements = response.json().get("results", [])
+                self.engagement_dropdown["values"] = [f"{eng['id']} - {eng['name']}" for eng in engagements]
+        except Exception as e:
+            print("Error fetching engagements:", e)
+
+    def fetch_engagement_details(self, engagement_id):
+        """Fetch target_start, target_end, and lead from the selected engagement."""
+        try:
+            response = requests.get(f"{DEFECTDOJO_URL}/engagements/{engagement_id}/", headers=HEADERS)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("target_start", ""), data.get("target_end", ""), data.get("lead", "")
+            else:
+                messagebox.showerror("Error", "Failed to fetch engagement details.")
+                return "", "", ""
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to fetch engagement details: {e}")
+            return "", "", ""
+
+    def check_existing_test(self, engagement_id, jira_id):
+        """Check if a test already exists for the given engagement and JIRA ID."""
+        try:
+            response = requests.get(f"{DEFECTDOJO_URL}/tests/?engagement={engagement_id}&title={jira_id}", headers=HEADERS)
+            if response.status_code == 200:
+                return len(response.json().get("results", [])) > 0  # Returns True if test exists
+        except Exception as e:
+            print(f"Error checking existing test: {e}")
+        return False
+
+    def create_tests(self):
+        """Create tests while skipping existing ones and show a loading screen."""
+        selected_engagement = self.engagement_dropdown.get().split(" - ")[0]
+        jira_ids = self.filtered_textarea.get("1.0", tk.END).strip().split(", ")
+
+        if not jira_ids:
+            messagebox.showwarning("Warning", "No JIRA IDs to create tests for.")
+            return
+
+        # Show loading screen
+        self.show_loading_screen()
+
+        # Fetch engagement details
+        target_start, target_end, lead = self.fetch_engagement_details(selected_engagement)
+
+        created_tests = []
+
+        for jira_id in jira_ids:
+            if self.check_existing_test(selected_engagement, jira_id):
+                print(f"Skipping existing test: {jira_id}")
+                continue  # Skip if test already exists in this engagement
+
+            payload = {
+                "engagement": selected_engagement,
+                "scan_type": "Manual Code Review",
+                "title": jira_id,
+                "target_start": target_start,
+                "target_end": target_end,
+                "lead": lead,
+                "test_type": 4,
+                "environment": 4
+            }
+
+            response = requests.post(f"{DEFECTDOJO_URL}/tests/", headers=HEADERS, json=payload)
+
+            if response.status_code == 201:
+                created_tests.append(f"{jira_id} (Test ID: {response.json()['id']})")
+
+        # Hide loading screen
+        self.hide_loading_screen()
+
+        if created_tests:
+            messagebox.showinfo("Success", "Tests Created:\n" + "\n".join(created_tests))
+        else:
+            messagebox.showinfo("No New Tests", "No new tests were created (all were duplicates).")
+
+    def show_loading_screen(self):
+        """Display a loading screen while creating tests."""
+        self.loading_window = tk.Toplevel(self.root)
+        self.loading_window.title("Processing")
+        self.loading_window.geometry("200x100")
+        label = tk.Label(self.loading_window, text="Creating tests...\nPlease wait.")
+        label.pack(pady=20)
+        self.loading_window.update()
+
+    def hide_loading_screen(self):
+        """Hide the loading screen."""
+        if hasattr(self, 'loading_window'):
+            self.loading_window.destroy()
+
+    def import_file(self):
+        """Import content from a .txt file."""
+        file_path = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt")])
+        if file_path:
+            with open(file_path, "r") as file:
+                content = file.read()
+                self.textarea.insert(tk.END, content)
+
+    def filter_jira_ids(self):
+        """Extract and filter JIRA IDs from the input text."""
+        content = self.textarea.get("1.0", tk.END)
+        jira_pattern = r"\b([A-Z]+)-(\d+)\b"
+        extracted_jira_ids = re.findall(jira_pattern, content)
+
+        if extracted_jira_ids:
+            self.filtered_textarea.config(state="normal")
+            self.filtered_textarea.delete("1.0", tk.END)
+            self.filtered_textarea.insert(tk.END, ", ".join([f"{proj}-{num}" for proj, num in extracted_jira_ids]))
+            self.filtered_textarea.config(state="disabled")
+            self.create_tests_button.config(state="normal")  # Enable button only when valid JIRA IDs exist
+
+    def export_to_excel(self):
+        """Export filtered JIRA IDs to an Excel file."""
+        file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
+        if file_path:
+            workbook = openpyxl.Workbook()
+            sheet = workbook.active
+            sheet.append(["Jira ID"])
+            for jira_id in self.filtered_textarea.get("1.0", tk.END).strip().split(", "):
+                sheet.append([jira_id])
+            workbook.save(file_path)
+            messagebox.showinfo("Success", "Exported successfully!")
+# Create tabs
+create_engagement_tab()
+create_tests_tab()
+jira_extractor_frame = ttk.Frame(notebook)
+notebook.add(jira_extractor_frame, text="Jira ID Extractor")
+jira_extractor_app = JiraExtractorApp(root, jira_extractor_frame)
+
+root.mainloop()
