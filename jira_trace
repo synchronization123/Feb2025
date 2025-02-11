@@ -1,0 +1,45 @@
+import requests
+import pandas as pd
+
+# Configuration (Replace with environment variables or input dynamically)
+JIRA_URL = "https://jira.alm.com/rest/api/2/search"
+JIRA_TOKEN = "djdjdnndnd"  # Replace with secure storage method
+HEADERS = {
+    "Authorization": f"Bearer {JIRA_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# Read input file
+input_file = "traces.xlsx"
+df = pd.read_excel(input_file, usecols=["Traces"])
+
+# Dictionary to store trace-to-key mapping
+trace_key_mapping = {}
+
+# Function to fetch JIRA key for a given trace
+def fetch_jira_key(trace):
+    query = f'text~"{trace}"'
+    response = requests.get(f"{JIRA_URL}?jql={query}", headers=HEADERS)
+
+    if response.status_code == 200:
+        data = response.json()
+        issues = data.get("issues", [])
+        if issues:
+            return issues[0].get("key")  # Fetch first matching key
+    return "Not Found"
+
+# Iterate through traces and fetch corresponding JIRA keys
+for index, row in df.iterrows():
+    trace = str(row["Traces"]).strip()
+    if trace:
+        jira_key = fetch_jira_key(trace)
+        trace_key_mapping[trace] = jira_key
+
+# Create output DataFrame
+output_df = pd.DataFrame(list(trace_key_mapping.items()), columns=["Traces", "Key"])
+
+# Write to Excel
+output_file = "output.xlsx"
+output_df.to_excel(output_file, index=False)
+
+print(f"Output saved to {output_file}")
