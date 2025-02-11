@@ -1,40 +1,139 @@
 import requests
 import pandas as pd
+from openpyxl import Workbook
 
-# Constants
-INPUT_FILE = "Hotspots.xlsx"
-OUTPUT_FILE = "Output_hotspots.xlsx"
-API_URL = "https://sonar.crm.com/api/hotspots/show?hotspot="
-HEADERS = {"Authorization": "Bearer sjjsjnss"}
+# Configuration
+SONAR_URL = "https://sonar.crm.com"
+TOKEN = "jdjdjnd"  # Replace with your token
+MAX_PAGE_SIZE = 500  # SonarQube's maximum allowed page size
 
-# Load input Excel file (column A has keys)
-df = pd.read_excel(INPUT_FILE, usecols=[0], names=["key"])
-
-# Function to fetch data from API
-def fetch_hotspot_data(hotspot_key):
-    response = requests.get(API_URL + hotspot_key, headers=HEADERS)
-    
-    if response.status_code == 200:
-        data = response.json()
+def get_paginated_data(url, data_key):
+    """Handle paginated API responses"""
+    results = []
+    page = 1
+    while True:
+        paginated_url = f"{url}&p={page}&ps={MAX_PAGE_SIZE}"
+        response = requests.get(
+            paginated_url,
+            auth=(TOKEN, '')
+        )
         
-        # Extract data from 'comment' array if available
-        comments = data.get("comment", [])
-        if comments:  # Check if comments exist
-            comment = comments[0]  # Taking the first comment if multiple exist
-            return {
-                "key": hotspot_key,
-                "login": comment.get("login", ""),
-                "markdown": comment.get("markdown", "")
-            }
+        if response.status_code != 200:
+            print(f"Error fetching data: {response.text}")
+            break
+            
+        data = response.json()
+        results.extend(data.get(data_key, []))
+        
+        # Check if we've reached the last page
+        paging = data.get('paging', {})
+        if paging.get('pageIndex', 0) * paging.get('pageSize', 0) >= paging.get('total', 0):
+            break
+            
+        page += 1
+        
+    return results
+
+def get_hotspot_comments(project_key):
+    """Fetch TO_REVIEW hotspots and their comments for a project"""
+    hotspots_data = []
     
-    # If no comment exists, return empty values
-    return {"key": hotspot_key, "login": "", "markdown": ""}
+    # Get all hotspots in TO_REVIEW status
+    hotspots = get_paginated_data(
+        f"{SONAR_URL}/api/hotspots/search?projectKey={project_key}&status=TO_REVIEW",
+        'hotspots'
+    )
+    
+    for hotspot in hotspots:
+        # Get hotspot details
+        response = requests.get(
+            f"{SONAR_URL}/api/hotspots/show?hotspot={hotspot['key']}",
+            auth=(TOKEN, '')
+        )
+        
+        if response.status_code == 200:
+            details = response.json()
+            # Build hotspot URL
+            hotspot_url = f"{SONAR_URL}/security_hotspots?id={project_key}&hotspots={hotspot['key']}"
+            
+            # Extract comments
+            for activity in details.get('activities', []):
+                if activity.get('type') == 'COMMENT':
+                    hotspots_data.append({
+                        'Project': project_key,
+                        'Hotspot URL': hotspot_url,
+                        'User': activity.get('user', 'N/A'),
+                        'Date': activity.get('createdAt', 'N/A'),
+                        'Comment': activity.get('value', '')
+                    })
+                    
+    return hotspots_data
 
-# Fetch data for all keys
-output_data = [fetch_hotspot_data(row["key"]) for _, row in df.iterrows()]
+def get_issue_comments(project_key):
+    """Fetch issues and their comments for a project"""
+    issues_data = []
+    
+    # Get all issues
+    issues = get_paginated_data(
+        f"{SONAR_URL}/api/issues/search?componentKeys={project_key}",
+        'issues'
+    )
+    
+    for issue in issues:
+        # Get comments for issue
+        comments = get_paginated_data(
+            f"{SONAR_URL}/api/issues/comments?issue={issue['key']}",
+            'comments'
+        )
+        
+        # Build issue URL
+        issue_url = f"{SONAR_URL}/project/issues?id={project_key}&open={issue['key']}"
+        
+        for comment in comments:
+            issues_data.append({
+                'Project': project_key,
+                'Issue URL': issue_url,
+                'User': comment.get('login', 'N/A'),
+                'Date': comment.get('createdAt', 'N/A'),
+                'Comment': comment.get('markdown', '')
+            })
+            
+    return issues_data
 
-# Save to new Excel file
-output_df = pd.DataFrame(output_data)
-output_df.to_excel(OUTPUT_FILE, index=False)
+# Main execution
+if __name__ == "__main__":
+    # Get all projects
+    projects = get_paginated_data(
+        f"{SONAR_URL}/api/components/search_projects",
+        'components'
+    )
+    project_keys = [p['key'] for p in projects]
 
-print(f"Data saved to {OUTPUT_FILE}")
+    # Collect data
+    all_hotspots = []
+    all_issues = []
+    
+    for idx, project_key in enumerate(project_keys, 1):
+        print(f"Processing project {idx}/{len(project_keys)}: {project_key}")
+        
+        # Get hotspot data
+        all_hotspots.extend(get_hotspot_comments(project_key))
+        
+        # Get issue data
+        all_issues.extend(get_issue_comments(project_key))
+    
+    # Create Excel file
+    with pd.ExcelWriter('sonarqube_report.xlsx') as writer:
+        pd.DataFrame(all_hotspots).to_excel(
+            writer, 
+            sheet_name='Hotspot Comments',
+            index=False
+        )
+        
+        pd.DataFrame(all_issues).to_excel(
+            writer,
+            sheet_name='Issue Comments',
+            index=False
+        )
+
+    print("Report generated: sonarqube_report.xlsx")
