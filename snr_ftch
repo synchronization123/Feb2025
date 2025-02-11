@@ -1,0 +1,89 @@
+import requests
+from openpyxl import Workbook
+from datetime import datetime
+
+# Configuration
+SONARQUBE_URL = 'https://sonar.crm.com'
+API_TOKEN = 'jdjdjnd'
+HEADERS = {'Authorization': f'Bearer {API_TOKEN}'}
+
+def fetch_projects():
+    projects = []
+    page = 1
+    page_size = 500
+    while True:
+        response = requests.get(f'{SONARQUBE_URL}/api/components/search', headers=HEADERS, params={'qualifiers': 'TRK', 'p': page, 'ps': page_size})
+        data = response.json()
+        projects.extend(data.get('components', []))
+        if not data.get('paging') or data['paging']['total'] <= page * page_size:
+            break
+        page += 1
+    return projects
+
+def fetch_hotspots(project_key):
+    hotspots = []
+    page = 1
+    page_size = 500
+    while True:
+        response = requests.get(f'{SONARQUBE_URL}/api/hotspots/search', headers=HEADERS, params={'projectKey': project_key, 'status': 'TO_REVIEW', 'p': page, 'ps': page_size})
+        data = response.json()
+        hotspots.extend(data.get('hotspots', []))
+        if not data.get('paging') or data['paging']['total'] <= page * page_size:
+            break
+        page += 1
+    return hotspots
+
+def fetch_issues(project_key):
+    issues = []
+    page = 1
+    page_size = 500
+    while True:
+        response = requests.get(f'{SONARQUBE_URL}/api/issues/search', headers=HEADERS, params={'componentKeys': project_key, 'p': page, 'ps': page_size})
+        data = response.json()
+        issues.extend(data.get('issues', []))
+        if not data.get('paging') or data['paging']['total'] <= page * page_size:
+            break
+        page += 1
+    return issues
+
+def main():
+    projects = fetch_projects()
+
+    wb = Workbook()
+    ws_hotspots = wb.active
+    ws_hotspots.title = 'Security Hotspots'
+    ws_hotspots.append(['Project', 'Hotspot Issue URL', 'User Who Added Comment', 'Date', 'Comment'])
+
+    ws_issues = wb.create_sheet(title='Issues')
+    ws_issues.append(['Project', 'Issue URL', 'User Who Added Comment', 'Date', 'Comment'])
+
+    for project in projects:
+        project_key = project['key']
+        project_name = project['name']
+
+        # Fetch and process hotspots
+        hotspots = fetch_hotspots(project_key)
+        for hotspot in hotspots:
+            hotspot_id = hotspot['key']
+            hotspot_url = f'{SONARQUBE_URL}/security_hotspots?id={project_key}&hotspots={hotspot_id}'
+            for comment in hotspot.get('comments', []):
+                user = comment['login']
+                date = datetime.strptime(comment['createdAt'], '%Y-%m-%dT%H:%M:%S%z').strftime('%Y-%m-%d %H:%M:%S')
+                text = comment['markdown']
+                ws_hotspots.append([project_name, hotspot_url, user, date, text])
+
+        # Fetch and process issues
+        issues = fetch_issues(project_key)
+        for issue in issues:
+            issue_id = issue['key']
+            issue_url = f'{SONARQUBE_URL}/project/issues?id={project_key}&issues={issue_id}'
+            for comment in issue.get('comments', []):
+                user = comment['login']
+                date = datetime.strptime(comment['createdAt'], '%Y-%m-%dT%H:%M:%S%z').strftime('%Y-%m-%d %H:%M:%S')
+                text = comment['markdown']
+                ws_issues.append([project_name, issue_url, user, date, text])
+
+    wb.save('SonarQube_Report.xlsx')
+
+if __name__ == '__main__':
+    main()
