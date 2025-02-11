@@ -3,16 +3,21 @@ from openpyxl import Workbook
 from datetime import datetime
 
 # Configuration
-SONARQUBE_URL = 'https://sonar.crm.com'
-API_TOKEN = 'jdjdjnd'
+SONARQUBE_URL = 'https://sonar.crm.com'  # Replace with your SonarQube instance URL
+API_TOKEN = 'jdjdjnd'  # Replace with your actual API token
 HEADERS = {'Authorization': f'Bearer {API_TOKEN}'}
 
 def fetch_projects():
+    """Fetches all projects from SonarQube."""
     projects = []
     page = 1
     page_size = 500
     while True:
-        response = requests.get(f'{SONARQUBE_URL}/api/components/search', headers=HEADERS, params={'qualifiers': 'TRK', 'p': page, 'ps': page_size})
+        response = requests.get(
+            f'{SONARQUBE_URL}/api/components/search',
+            headers=HEADERS,
+            params={'qualifiers': 'TRK', 'p': page, 'ps': page_size}
+        )
         data = response.json()
         projects.extend(data.get('components', []))
         if not data.get('paging') or data['paging']['total'] <= page * page_size:
@@ -21,11 +26,16 @@ def fetch_projects():
     return projects
 
 def fetch_hotspots(project_key):
+    """Fetches security hotspots for a given project."""
     hotspots = []
     page = 1
     page_size = 500
     while True:
-        response = requests.get(f'{SONARQUBE_URL}/api/hotspots/search', headers=HEADERS, params={'projectKey': project_key, 'status': 'TO_REVIEW', 'p': page, 'ps': page_size})
+        response = requests.get(
+            f'{SONARQUBE_URL}/api/hotspots/search',
+            headers=HEADERS,
+            params={'projectKey': project_key, 'status': 'TO_REVIEW', 'p': page, 'ps': page_size}
+        )
         data = response.json()
         hotspots.extend(data.get('hotspots', []))
         if not data.get('paging') or data['paging']['total'] <= page * page_size:
@@ -34,11 +44,16 @@ def fetch_hotspots(project_key):
     return hotspots
 
 def fetch_issues(project_key):
+    """Fetches issues for a given project."""
     issues = []
     page = 1
     page_size = 500
     while True:
-        response = requests.get(f'{SONARQUBE_URL}/api/issues/search', headers=HEADERS, params={'componentKeys': project_key, 'p': page, 'ps': page_size})
+        response = requests.get(
+            f'{SONARQUBE_URL}/api/issues/search',
+            headers=HEADERS,
+            params={'componentKeys': project_key, 'p': page, 'ps': page_size}
+        )
         data = response.json()
         issues.extend(data.get('issues', []))
         if not data.get('paging') or data['paging']['total'] <= page * page_size:
