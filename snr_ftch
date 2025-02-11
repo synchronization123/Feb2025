@@ -7,23 +7,28 @@ OUTPUT_FILE = "Output_hotspots.xlsx"
 API_URL = "https://sonar.crm.com/api/hotspots/show?hotspot="
 HEADERS = {"Authorization": "Bearer sjjsjnss"}
 
-# Load input Excel file
+# Load input Excel file (column A has keys)
 df = pd.read_excel(INPUT_FILE, usecols=[0], names=["key"])
 
 # Function to fetch data from API
 def fetch_hotspot_data(hotspot_key):
     response = requests.get(API_URL + hotspot_key, headers=HEADERS)
+    
     if response.status_code == 200:
         data = response.json()
-        return {
-            "key": hotspot_key,
-            "login": data.get("login", ""),
-            "markdown": data.get("markdown", ""),
-            "status": data.get("status", ""),
-            "newValue": data.get("newValue", "")
-        }
-    else:
-        return {"key": hotspot_key, "login": "", "markdown": "", "status": "", "newValue": ""}
+        
+        # Extract data from 'comment' array if available
+        comments = data.get("comment", [])
+        if comments:  # Check if comments exist
+            comment = comments[0]  # Taking the first comment if multiple exist
+            return {
+                "key": hotspot_key,
+                "login": comment.get("login", ""),
+                "markdown": comment.get("markdown", "")
+            }
+    
+    # If no comment exists, return empty values
+    return {"key": hotspot_key, "login": "", "markdown": ""}
 
 # Fetch data for all keys
 output_data = [fetch_hotspot_data(row["key"]) for _, row in df.iterrows()]
