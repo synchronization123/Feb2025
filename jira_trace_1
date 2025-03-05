@@ -1,0 +1,55 @@
+import requests
+import pandas as pd
+
+# Configuration (Replace with secure storage method)
+JIRA_URL = "https://jira.alm.com/rest/api/2/search"
+JIRA_TOKEN = "djdjdnndnd"  # Replace with secure storage method
+HEADERS = {
+    "Authorization": f"Bearer {JIRA_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# Read input file
+input_file = "traces.xlsx"
+df = pd.read_excel(input_file, usecols=["Traces"])
+
+# Dictionary to store trace-to-key mapping with status
+trace_key_mapping = {}
+
+# Function to fetch JIRA key and status for a given trace
+def fetch_jira_details(trace):
+    query = f'text~"{trace}"'
+    response = requests.get(f"{JIRA_URL}?jql={query}", headers=HEADERS)
+
+    if response.status_code == 200:
+        data = response.json()
+        issues = data.get("issues", [])
+        if issues:
+            issue = issues[0]  # Fetch first matching issue
+            key = issue.get("key", "Not Found")
+            status = issue.get("fields", {}).get("status", {}).get("name", "Unknown")
+            return key, status
+    return "Not Found", "Unknown"
+
+# Iterate through traces and fetch corresponding JIRA details
+for index, row in df.iterrows():
+    trace = str(row["Traces"]).strip()
+    if trace:
+        jira_key, jira_status = fetch_jira_details(trace)
+        trace_key_mapping[trace] = (jira_key, jira_status)
+
+# Create output DataFrame
+output_df = pd.DataFrame(
+    list(trace_key_mapping.items()), 
+    columns=["Traces", "Key_Status"]
+)
+
+# Split Key and Status into separate columns
+output_df[["Key", "Status"]] = pd.DataFrame(output_df["Key_Status"].tolist(), index=output_df.index)
+output_df.drop(columns=["Key_Status"], inplace=True)
+
+# Write to Excel
+output_file = "output.xlsx"
+output_df.to_excel(output_file, index=False)
+
+print(f"Output saved to {output_file}")
